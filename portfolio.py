@@ -33,6 +33,14 @@ def init_db():
     conn.close()
 
 
+def clear_user(user_id):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("DELETE FROM transactions WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+
 def add_transaction(user_id, category, ttype, amount, date):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -44,21 +52,15 @@ def add_transaction(user_id, category, ttype, amount, date):
     conn.close()
 
 
-def update_transaction(user_id, tx_id, amount, date):
+def set_value(user_id, category, value):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute(
-        "UPDATE transactions SET amount=?, date=? WHERE id=? AND user_id=?",
-        (float(amount), str(date), tx_id, user_id)
-    )
-    conn.commit()
-    conn.close()
-
-
-def delete_transaction(user_id, tx_id):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("DELETE FROM transactions WHERE id=? AND user_id=?", (tx_id, user_id))
+    c.execute("""
+    INSERT INTO values_now (user_id, category, value)
+    VALUES (?, ?, ?)
+    ON CONFLICT(user_id, category)
+    DO UPDATE SET value=excluded.value
+    """, (user_id, category, float(value)))
     conn.commit()
     conn.close()
 
@@ -75,19 +77,6 @@ def get_history(user_id):
     rows = c.fetchall()
     conn.close()
     return rows
-
-
-def set_value(user_id, category, value):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("""
-    INSERT INTO values_now (user_id, category, value)
-    VALUES (?, ?, ?)
-    ON CONFLICT(user_id, category)
-    DO UPDATE SET value=excluded.value
-    """, (user_id, category, float(value)))
-    conn.commit()
-    conn.close()
 
 
 def get_report(user_id):
