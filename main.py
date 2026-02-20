@@ -17,7 +17,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 DB_FILE = 'portfolio.db'
 
-# --- 1. KHỞI TẠO DATABASE VÀ DỮ LIỆU GỐC ---
+# --- 1. KHỞI TẠO DATABASE ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -39,7 +39,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- 2. CÁC HÀM TÍNH TOÁN VÀ ĐỊNH DẠNG ---
+# --- 2. HÀM HỖ TRỢ ---
 def format_m(amount):
     return f"{amount / 1000000:.1f}M" if amount != 0 else "0"
 
@@ -99,7 +99,30 @@ def get_main_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# --- 3. XỬ LÝ LỆNH ---
+def get_recent_history_menu():
+    """Hàm tạo danh sách 10 giao dịch gần nhất dạng nút bấm"""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY id DESC LIMIT 10")
+    rows = c.fetchall()
+    conn.close()
+
+    if not rows:
+        return "Chưa có giao dịch nào.", None
+
+    emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
+    keyboard = []
+    msg = "📜 LỊCH SỬ GIAO DỊCH\n\nClick 1 giao dịch:"
+    
+    for i, row in enumerate(rows):
+        emoji = emojis[i] if i < 10 else f"{i+1}."
+        btn_text = f"{emoji} {row[1]} — {row[2]} — {format_money(row[3])} — {row[4]}"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"hist_{row[0]}")])
+        
+    keyboard.append([InlineKeyboardButton("📄 Xem full lịch sử", callback_data="view_full_hist")])
+    return msg, InlineKeyboardMarkup(keyboard)
+
+# --- 3. XỬ LÝ LỆNH TỪ BÀN PHÍM ---
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stats = get_stats()
     text = (
@@ -159,7 +182,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Vui lòng nhập số tiền hợp lệ:")
         return
 
-    # --- XỬ LÝ NÚT MENU ---
+    # Xử lý khi user đang nhập số tiền mới để SỬA lịch sử
+    elif state and str(state).startswith('awaiting_edit_'):
+        try:
+            new_amount = float(text)
+            tx_id = state.split("_")[2]
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            c.execute("UPDATE transactions SET amount = ? WHERE id = ?", (new_amount, tx_id))
+            conn.commit()
+            conn.close()
+            context.user_data.clear()
+            
+            # Sau khi sửa xong, hiển thị lại list 10 giao dịch
+            msg, markup = get_recent_history_menu()
+            await update.message.reply_text(f"✅ Đã cập nhật thành {format_money(new_amount)}.\n\n{msg}", reply_markup=markup)
+        except ValueError:
+            await update.message.reply_text("⚠️ Vui lòng nhập số tiền hợp lệ (ví dụ: 15000000):")
+        return
+
+    # --- MENU CHÍNH ---
     if text == '💰 Tài sản':
         s = get_stats()
         t_ts = s['tong_tai_san']
@@ -204,44 +246,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Chọn danh mục:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif text == '📜 Lịch sử':
-        # LOGIC LỊCH SỬ MỚI ĐÃ ĐƯỢC PHÂN LOẠI
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY date DESC, id DESC")
-        rows = c.fetchall()
-        conn.close()
-
-        if not rows:
-            await update.message.reply_text("Chưa có giao dịch nào.")
-            return
-
-        crypto_txs = [r for r in rows if r[1] == 'Crypto']
-        stock_txs = [r for r in rows if r[1] == 'Stock']
-
-        msg = "📜 LỊCH SỬ GIAO DỊCH CHI TIẾT\n\n"
-        
-        msg += "🌕 CRYPTO:\n"
-        if not crypto_txs:
-            msg += "Chưa có giao dịch.\n"
-        for r in crypto_txs:
-            msg += f"🔹 {r[4]} | {r[2]}: {format_money(r[3])}\n"
-            
-        msg += "\n━━━━━━━━━━━━━━\n\n"
-        
-        msg += "📈 STOCK:\n"
-        if not stock_txs:
-            msg += "Chưa có giao dịch.\n"
-        for r in stock_txs:
-            msg += f"🔹 {r[4]} | {r[2]}: {format_money(r[3])}\n"
-
-        # Cắt bớt text nếu vượt quá giới hạn 4096 ký tự của Telegram
-        if len(msg) > 4000:
-            msg = msg[:3800] + "\n\n... (Dữ liệu quá dài, chỉ hiển thị một phần. Hãy dùng Backup để xem toàn bộ file DB)"
-
-        # Nút quản lý các giao dịch gần nhất
-        keyboard = [[InlineKeyboardButton("🛠 Quản lý 10 giao dịch gần nhất", callback_data="manage_recent")]]
-        
-        await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+        msg, markup = get_recent_history_menu()
+        if markup:
+            await update.message.reply_text(msg, reply_markup=markup)
+        else:
+            await update.message.reply_text(msg)
 
     elif text == '🥧 Phân bổ':
         s = get_stats()
@@ -287,12 +296,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Lệnh không xác định. Vui lòng chọn chức năng dưới đây:", reply_markup=get_main_keyboard())
 
-# --- 4. XỬ LÝ INLINE KEYBOARD VÀ FILE RESTORE ---
+# --- 4. XỬ LÝ NÚT BẤM DƯỚI TIN NHẮN (INLINE KEYBOARD) ---
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
+    # Xử lý Nạp / Rút
     if data.startswith("cat_"):
         parts = data.split("_")
         action, cat = parts[1], parts[2]
@@ -300,30 +310,23 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['category'] = cat
         await query.edit_message_text(f"Đã chọn {cat}.\nNhập số tiền {'nạp' if action == 'nap' else 'rút'}:")
 
-    elif data == "manage_recent":
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY id DESC LIMIT 10")
-        rows = c.fetchall()
-        conn.close()
-        
-        keyboard = []
-        for row in rows:
-            btn_text = f"{row[1]} | {row[2]} {format_money(row[3])}"
-            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"hist_{row[0]}")])
-        keyboard.append([InlineKeyboardButton("⬅️ Đóng", callback_data="close_msg")])
-        
-        await query.edit_message_text("Chọn giao dịch bạn muốn Xóa/Sửa:", reply_markup=InlineKeyboardMarkup(keyboard))
-
+    # Bấm vào 1 giao dịch trong Lịch sử
     elif data.startswith("hist_"):
         tx_id = data.split("_")[1]
         keyboard = [
             [InlineKeyboardButton("✏️ Sửa", callback_data=f"edit_{tx_id}"),
              InlineKeyboardButton("❌ Xóa", callback_data=f"del_{tx_id}")],
-            [InlineKeyboardButton("⬅️ Quay lại", callback_data="manage_recent")]
+            [InlineKeyboardButton("⬅️ Quay lại", callback_data="back_hist_list")]
         ]
         await query.edit_message_text("Bạn muốn làm gì?", reply_markup=InlineKeyboardMarkup(keyboard))
 
+    # Bấm nút Sửa
+    elif data.startswith("edit_"):
+        tx_id = data.split("_")[1]
+        context.user_data['state'] = f"awaiting_edit_{tx_id}"
+        await query.edit_message_text("📝 Nhập số tiền mới cho giao dịch này:")
+
+    # Bấm nút Xóa
     elif data.startswith("del_"):
         tx_id = data.split("_")[1]
         conn = sqlite3.connect(DB_FILE)
@@ -331,11 +334,45 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         c.execute("DELETE FROM transactions WHERE id = ?", (tx_id,))
         conn.commit()
         conn.close()
-        await query.edit_message_text("✅ Đã xóa giao dịch thành công.")
+        
+        keyboard = [[InlineKeyboardButton("⬅️ Quay lại", callback_data="back_hist_list")]]
+        await query.edit_message_text("✅ Đã xóa giao dịch thành công.", reply_markup=InlineKeyboardMarkup(keyboard))
 
+    # Nút Quay lại danh sách 10 giao dịch
+    elif data == "back_hist_list":
+        msg, markup = get_recent_history_menu()
+        await query.edit_message_text(msg, reply_markup=markup)
+
+    # Nút Xem full lịch sử
+    elif data == "view_full_hist":
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY date DESC, id DESC")
+        rows = c.fetchall()
+        conn.close()
+
+        crypto_txs = [r for r in rows if r[1] == 'Crypto']
+        stock_txs = [r for r in rows if r[1] == 'Stock']
+
+        msg = "📜 FULL LỊCH SỬ GIAO DỊCH\n\n🌕 CRYPTO:\n"
+        for r in crypto_txs:
+            msg += f"🔹 {r[4]} | {r[2]}: {format_money(r[3])}\n"
+            
+        msg += "\n━━━━━━━━━━━━━━\n\n📈 STOCK:\n"
+        for r in stock_txs:
+            msg += f"🔹 {r[4]} | {r[2]}: {format_money(r[3])}\n"
+
+        if len(msg) > 4000:
+            msg = msg[:3800] + "\n\n... (Dữ liệu quá dài. Hãy tải file Backup để xem toàn bộ)"
+
+        keyboard = [[InlineKeyboardButton("⬅️ Đóng", callback_data="close_msg")]]
+        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # Đóng tin nhắn
     elif data == "close_msg":
         await query.message.delete()
 
+# Xử lý khi user Upload file Backup
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
     if doc.file_name == DB_FILE:
