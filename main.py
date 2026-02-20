@@ -17,7 +17,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 DB_FILE = 'portfolio.db'
 
-# --- 1. KHỞI TẠO DATABASE ---
+# --- 1. KHỞI TẠO DATABASE VÀ NẠP TOÀN BỘ DỮ LIỆU TỪ ẢNH ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -26,20 +26,68 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS transactions 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, type TEXT, amount REAL, date TEXT)''')
     
-    c.execute("SELECT COUNT(*) FROM assets")
-    if c.fetchone()[0] == 0:
+    # Kiểm tra xem db đang trống hoặc đang chứa 4 dòng demo cũ thì xóa đi để nạp full data
+    c.execute("SELECT COUNT(*) FROM transactions")
+    tx_count = c.fetchone()[0]
+    
+    if tx_count <= 4:
+        c.execute("DELETE FROM assets")
+        c.execute("DELETE FROM transactions")
+        
         c.executemany("INSERT INTO assets (category, current_value) VALUES (?, ?)", 
                       [('Crypto', 20000000), ('Stock', 123000000)])
-        c.executemany("INSERT INTO transactions (category, type, amount, date) VALUES (?, ?, ?, ?)", [
-            ('Crypto', 'Nạp', 348500000, '2024-01-01'),
-            ('Crypto', 'Rút', 250500000, '2024-01-02'),
-            ('Stock', 'Nạp', 267300000, '2024-01-01'),
-            ('Stock', 'Rút', 156500000, '2024-01-02')
-        ])
+        
+        # TOÀN BỘ DỮ LIỆU TRÍCH XUẤT TỪ ẢNH CỦA BẠN
+        full_data = [
+            # CRYPTO NẠP
+            ('Crypto', 'Nạp', 2000000, '2021-04-07'), ('Crypto', 'Nạp', 5000000, '2021-04-12'),
+            ('Crypto', 'Nạp', 15000000, '2021-04-15'), ('Crypto', 'Nạp', 1500000, '2021-04-26'),
+            ('Crypto', 'Nạp', 5000000, '2022-02-22'), ('Crypto', 'Nạp', 5000000, '2024-03-11'),
+            ('Crypto', 'Nạp', 8000000, '2024-05-21'), ('Crypto', 'Nạp', 5000000, '2024-06-12'),
+            ('Crypto', 'Nạp', 10000000, '2024-06-14'), ('Crypto', 'Nạp', 5000000, '2024-09-12'),
+            ('Crypto', 'Nạp', 5000000, '2024-09-13'), ('Crypto', 'Nạp', 5000000, '2024-09-28'),
+            ('Crypto', 'Nạp', 5000000, '2024-10-11'), ('Crypto', 'Nạp', 5000000, '2024-11-07'),
+            ('Crypto', 'Nạp', 5000000, '2024-11-10'), ('Crypto', 'Nạp', 5200000, '2024-11-10'),
+            ('Crypto', 'Nạp', 20000000, '2024-11-11'), ('Crypto', 'Nạp', 20000000, '2024-11-21'),
+            ('Crypto', 'Nạp', 20000000, '2024-11-22'), ('Crypto', 'Nạp', 20000000, '2024-11-23'),
+            ('Crypto', 'Nạp', 40000000, '2024-11-27'), ('Crypto', 'Nạp', 40000000, '2024-12-03'),
+            ('Crypto', 'Nạp', 20000000, '2024-12-19'), ('Crypto', 'Nạp', 10000000, '2025-02-02'),
+            ('Crypto', 'Nạp', 8000000, '2025-02-28'), ('Crypto', 'Nạp', 10000000, '2025-03-11'),
+            ('Crypto', 'Nạp', 5300000, '2025-04-04'), ('Crypto', 'Nạp', 13500000, '2025-05-19'),
+            ('Crypto', 'Nạp', 10000000, '2025-08-10'), ('Crypto', 'Nạp', 20000000, '2026-02-20'),
+            # CRYPTO RÚT
+            ('Crypto', 'Rút', 5000000, '2024-11-08'), ('Crypto', 'Rút', 24500000, '2025-06-25'),
+            ('Crypto', 'Rút', 28000000, '2025-06-30'), ('Crypto', 'Rút', 30000000, '2025-07-01'),
+            ('Crypto', 'Rút', 20000000, '2025-07-24'), ('Crypto', 'Rút', 20000000, '2025-07-30'),
+            ('Crypto', 'Rút', 20000000, '2025-07-31'), ('Crypto', 'Rút', 20000000, '2025-08-05'),
+            ('Crypto', 'Rút', 20000000, '2025-08-28'), ('Crypto', 'Rút', 20000000, '2025-09-23'),
+            ('Crypto', 'Rút', 5000000, '2025-10-28'), ('Crypto', 'Rút', 10000000, '2025-11-03'),
+            ('Crypto', 'Rút', 15000000, '2025-11-12'), ('Crypto', 'Rút', 13000000, '2026-01-28'),
+            # STOCK NẠP
+            ('Stock', 'Nạp', 3000000, '2024-03-15'), ('Stock', 'Nạp', 7000000, '2024-03-25'),
+            ('Stock', 'Nạp', 4000000, '2024-05-17'), ('Stock', 'Nạp', 4000000, '2024-05-17'),
+            ('Stock', 'Nạp', 2800000, '2024-06-04'), ('Stock', 'Nạp', 4000000, '2024-06-14'),
+            ('Stock', 'Nạp', 5000000, '2024-06-20'), ('Stock', 'Nạp', 2700000, '2024-08-14'),
+            ('Stock', 'Nạp', 6800000, '2025-04-23'), ('Stock', 'Nạp', 15000000, '2025-05-05'),
+            ('Stock', 'Nạp', 30000000, '2025-05-15'), ('Stock', 'Nạp', 20000000, '2025-07-29'),
+            ('Stock', 'Nạp', 20000000, '2025-07-30'), ('Stock', 'Nạp', 20000000, '2025-08-01'),
+            ('Stock', 'Nạp', 20000000, '2025-08-05'), ('Stock', 'Nạp', 20000000, '2025-08-29'),
+            ('Stock', 'Nạp', 5000000, '2025-09-15'), ('Stock', 'Nạp', 5000000, '2025-09-20'),
+            ('Stock', 'Nạp', 20000000, '2025-09-23'), ('Stock', 'Nạp', 10000000, '2025-10-30'),
+            ('Stock', 'Nạp', 10000000, '2025-11-03'), ('Stock', 'Nạp', 5000000, '2025-11-05'),
+            ('Stock', 'Nạp', 15000000, '2025-11-12'), ('Stock', 'Nạp', 13000000, '2026-01-28'),
+            # STOCK RÚT
+            ('Stock', 'Rút', 7000000, '2025-02-27'), ('Stock', 'Rút', 80000000, '2025-06-27'),
+            ('Stock', 'Rút', 2000000, '2025-07-23'), ('Stock', 'Rút', 3000000, '2025-08-26'),
+            ('Stock', 'Rút', 10000000, '2025-08-30'), ('Stock', 'Rút', 50000000, '2025-12-24'),
+            ('Stock', 'Rút', 4500000, '2025-12-29')
+        ]
+        c.executemany("INSERT INTO transactions (category, type, amount, date) VALUES (?, ?, ?, ?)", full_data)
+        
     conn.commit()
     conn.close()
 
-# --- 2. HÀM HỖ TRỢ ---
+# --- 2. HÀM HỖ TRỢ HIỂN THỊ ---
 def format_m(amount):
     return f"{amount / 1000000:.1f}M" if amount != 0 else "0"
 
@@ -99,27 +147,52 @@ def get_main_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-def get_recent_history_menu():
-    """Hàm tạo danh sách 10 giao dịch gần nhất dạng nút bấm"""
+def get_history_menu(page=None):
+    """Hàm xử lý chia trang cho Lịch sử để hiển thị được toàn bộ Data"""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY id DESC LIMIT 10")
+    c.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY date DESC, id DESC")
     rows = c.fetchall()
     conn.close()
 
     if not rows:
         return "Chưa có giao dịch nào.", None
 
-    emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
+    PAGE_SIZE = 10
     keyboard = []
-    msg = "📜 LỊCH SỬ GIAO DỊCH\n\nClick 1 giao dịch:"
     
-    for i, row in enumerate(rows):
+    if page is None:
+        # Chế độ Top 10 gần nhất
+        display_rows = rows[:10]
+        msg = "📜 10 GIAO DỊCH GẦN NHẤT\n\nClick để Sửa/Xóa:"
+        back_data = "recent"
+    else:
+        # Chế độ Xem Full có phân trang
+        start_idx = page * PAGE_SIZE
+        display_rows = rows[start_idx : start_idx + PAGE_SIZE]
+        total_pages = (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE
+        msg = f"📜 FULL LỊCH SỬ (Trang {page + 1}/{total_pages})\n\nClick để Sửa/Xóa:"
+        back_data = str(page)
+
+    emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
+    
+    for i, row in enumerate(display_rows):
         emoji = emojis[i] if i < 10 else f"{i+1}."
-        btn_text = f"{emoji} {row[1]} — {row[2]} — {format_money(row[3])} — {row[4]}"
-        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"hist_{row[0]}")])
+        btn_text = f"{emoji} {row[1]} | {row[2]} {format_money(row[3])} ({row[4]})"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"hist_{row[0]}_{back_data}")])
         
-    keyboard.append([InlineKeyboardButton("📄 Xem full lịch sử", callback_data="view_full_hist")])
+    if page is None:
+        keyboard.append([InlineKeyboardButton("📄 Xem full lịch sử", callback_data="view_page_0")])
+    else:
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ Trang trước", callback_data=f"view_page_{page-1}"))
+        if (page + 1) * PAGE_SIZE < len(rows):
+            nav_row.append(InlineKeyboardButton("Trang sau ➡️", callback_data=f"view_page_{page+1}"))
+        if nav_row:
+            keyboard.append(nav_row)
+        keyboard.append([InlineKeyboardButton("⬅️ Đóng full lịch sử", callback_data="back_to_recent")])
+        
     return msg, InlineKeyboardMarkup(keyboard)
 
 # --- 3. XỬ LÝ LỆNH TỪ BÀN PHÍM ---
@@ -186,7 +259,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif state and str(state).startswith('awaiting_edit_'):
         try:
             new_amount = float(text)
-            tx_id = state.split("_")[2]
+            parts = state.split("_")
+            tx_id = parts[2]
+            back_to = parts[3]
+            
             conn = sqlite3.connect(DB_FILE)
             c = conn.cursor()
             c.execute("UPDATE transactions SET amount = ? WHERE id = ?", (new_amount, tx_id))
@@ -194,8 +270,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.close()
             context.user_data.clear()
             
-            # Sau khi sửa xong, hiển thị lại list 10 giao dịch
-            msg, markup = get_recent_history_menu()
+            page = None if back_to == "recent" else int(back_to)
+            msg, markup = get_history_menu(page)
             await update.message.reply_text(f"✅ Đã cập nhật thành {format_money(new_amount)}.\n\n{msg}", reply_markup=markup)
         except ValueError:
             await update.message.reply_text("⚠️ Vui lòng nhập số tiền hợp lệ (ví dụ: 15000000):")
@@ -246,7 +322,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Chọn danh mục:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif text == '📜 Lịch sử':
-        msg, markup = get_recent_history_menu()
+        msg, markup = get_history_menu(page=None)
         if markup:
             await update.message.reply_text(msg, reply_markup=markup)
         else:
@@ -302,7 +378,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    # Xử lý Nạp / Rút
     if data.startswith("cat_"):
         parts = data.split("_")
         action, cat = parts[1], parts[2]
@@ -312,65 +387,55 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Bấm vào 1 giao dịch trong Lịch sử
     elif data.startswith("hist_"):
-        tx_id = data.split("_")[1]
+        parts = data.split("_")
+        tx_id = parts[1]
+        back_to = parts[2] # "recent" hoặc số trang (0, 1, 2...)
+        
         keyboard = [
-            [InlineKeyboardButton("✏️ Sửa", callback_data=f"edit_{tx_id}"),
-             InlineKeyboardButton("❌ Xóa", callback_data=f"del_{tx_id}")],
-            [InlineKeyboardButton("⬅️ Quay lại", callback_data="back_hist_list")]
+            [InlineKeyboardButton("✏️ Sửa", callback_data=f"edit_{tx_id}_{back_to}"),
+             InlineKeyboardButton("❌ Xóa", callback_data=f"del_{tx_id}_{back_to}")],
+            [InlineKeyboardButton("⬅️ Quay lại", callback_data=f"back_view_{back_to}")]
         ]
         await query.edit_message_text("Bạn muốn làm gì?", reply_markup=InlineKeyboardMarkup(keyboard))
 
     # Bấm nút Sửa
     elif data.startswith("edit_"):
-        tx_id = data.split("_")[1]
-        context.user_data['state'] = f"awaiting_edit_{tx_id}"
+        parts = data.split("_")
+        tx_id = parts[1]
+        back_to = parts[2]
+        context.user_data['state'] = f"awaiting_edit_{tx_id}_{back_to}"
         await query.edit_message_text("📝 Nhập số tiền mới cho giao dịch này:")
 
     # Bấm nút Xóa
     elif data.startswith("del_"):
-        tx_id = data.split("_")[1]
+        parts = data.split("_")
+        tx_id = parts[1]
+        back_to = parts[2]
+        
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("DELETE FROM transactions WHERE id = ?", (tx_id,))
         conn.commit()
         conn.close()
         
-        keyboard = [[InlineKeyboardButton("⬅️ Quay lại", callback_data="back_hist_list")]]
+        keyboard = [[InlineKeyboardButton("⬅️ Quay lại", callback_data=f"back_view_{back_to}")]]
         await query.edit_message_text("✅ Đã xóa giao dịch thành công.", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # Nút Quay lại danh sách 10 giao dịch
-    elif data == "back_hist_list":
-        msg, markup = get_recent_history_menu()
+    # Xử lý điều hướng các trang
+    elif data.startswith("view_page_"):
+        page = int(data.split("_")[2])
+        msg, markup = get_history_menu(page)
         await query.edit_message_text(msg, reply_markup=markup)
-
-    # Nút Xem full lịch sử
-    elif data == "view_full_hist":
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY date DESC, id DESC")
-        rows = c.fetchall()
-        conn.close()
-
-        crypto_txs = [r for r in rows if r[1] == 'Crypto']
-        stock_txs = [r for r in rows if r[1] == 'Stock']
-
-        msg = "📜 FULL LỊCH SỬ GIAO DỊCH\n\n🌕 CRYPTO:\n"
-        for r in crypto_txs:
-            msg += f"🔹 {r[4]} | {r[2]}: {format_money(r[3])}\n"
-            
-        msg += "\n━━━━━━━━━━━━━━\n\n📈 STOCK:\n"
-        for r in stock_txs:
-            msg += f"🔹 {r[4]} | {r[2]}: {format_money(r[3])}\n"
-
-        if len(msg) > 4000:
-            msg = msg[:3800] + "\n\n... (Dữ liệu quá dài. Hãy tải file Backup để xem toàn bộ)"
-
-        keyboard = [[InlineKeyboardButton("⬅️ Đóng", callback_data="close_msg")]]
-        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
-
-    # Đóng tin nhắn
-    elif data == "close_msg":
-        await query.message.delete()
+        
+    elif data.startswith("back_view_"):
+        back_to = data.split("back_view_")[1]
+        page = None if back_to == "recent" else int(back_to)
+        msg, markup = get_history_menu(page)
+        await query.edit_message_text(msg, reply_markup=markup)
+        
+    elif data == "back_to_recent":
+        msg, markup = get_history_menu(page=None)
+        await query.edit_message_text(msg, reply_markup=markup)
 
 # Xử lý khi user Upload file Backup
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
