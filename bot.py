@@ -2,7 +2,7 @@
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-TOKEN = "YOUR_BOT_TOKEN"
+TOKEN = "8411805699:AAEmN8Thtuezey_amr83UZNnUILvHoYb9ME"
 
 MENU = [
     ["💰 Tài sản", "📊 Tài sản hiện có"],
