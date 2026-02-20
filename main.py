@@ -13,7 +13,6 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes
 )
 
-# Cấu hình log để theo dõi lỗi trên Railway
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 DB_FILE = 'portfolio.db'
@@ -27,7 +26,6 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS transactions 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, type TEXT, amount REAL, date TEXT)''')
     
-    # Nạp dữ liệu mặc định nếu database trống (Khớp 100% demo của bạn)
     c.execute("SELECT COUNT(*) FROM assets")
     if c.fetchone()[0] == 0:
         c.executemany("INSERT INTO assets (category, current_value) VALUES (?, ?)", 
@@ -116,7 +114,6 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
-    # Hủy trạng thái nhập nếu người dùng bấm nút menu
     menu_buttons = ['💰 Tài sản', '📜 Lịch sử', '💵 Tài sản hiện có', '💳 Tiền mặt', 
                     '➕ Nạp thêm', '➖ Rút ra', '📊 Biểu đồ', '🥧 Phân bổ', 
                     '💾 Backup', '♻️ Restore', '⚙️ Cài đặt', '❓ Hướng dẫn']
@@ -207,9 +204,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Chọn danh mục:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif text == '📜 Lịch sử':
+        # LOGIC LỊCH SỬ MỚI ĐÃ ĐƯỢC PHÂN LOẠI
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY id DESC LIMIT 10")
+        c.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY date DESC, id DESC")
         rows = c.fetchall()
         conn.close()
 
@@ -217,12 +215,33 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Chưa có giao dịch nào.")
             return
 
-        keyboard = []
-        for i, row in enumerate(rows, 1):
-            btn_text = f"{i}️⃣ {row[1]} — {row[2]} — {format_money(row[3])} — {row[4]}"
-            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"hist_{row[0]}")])
+        crypto_txs = [r for r in rows if r[1] == 'Crypto']
+        stock_txs = [r for r in rows if r[1] == 'Stock']
+
+        msg = "📜 LỊCH SỬ GIAO DỊCH CHI TIẾT\n\n"
         
-        await update.message.reply_text("VIP list:\n\n📜 LỊCH SỬ GIAO DỊCH", reply_markup=InlineKeyboardMarkup(keyboard))
+        msg += "🌕 CRYPTO:\n"
+        if not crypto_txs:
+            msg += "Chưa có giao dịch.\n"
+        for r in crypto_txs:
+            msg += f"🔹 {r[4]} | {r[2]}: {format_money(r[3])}\n"
+            
+        msg += "\n━━━━━━━━━━━━━━\n\n"
+        
+        msg += "📈 STOCK:\n"
+        if not stock_txs:
+            msg += "Chưa có giao dịch.\n"
+        for r in stock_txs:
+            msg += f"🔹 {r[4]} | {r[2]}: {format_money(r[3])}\n"
+
+        # Cắt bớt text nếu vượt quá giới hạn 4096 ký tự của Telegram
+        if len(msg) > 4000:
+            msg = msg[:3800] + "\n\n... (Dữ liệu quá dài, chỉ hiển thị một phần. Hãy dùng Backup để xem toàn bộ file DB)"
+
+        # Nút quản lý các giao dịch gần nhất
+        keyboard = [[InlineKeyboardButton("🛠 Quản lý 10 giao dịch gần nhất", callback_data="manage_recent")]]
+        
+        await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif text == '🥧 Phân bổ':
         s = get_stats()
@@ -281,12 +300,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['category'] = cat
         await query.edit_message_text(f"Đã chọn {cat}.\nNhập số tiền {'nạp' if action == 'nap' else 'rút'}:")
 
+    elif data == "manage_recent":
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY id DESC LIMIT 10")
+        rows = c.fetchall()
+        conn.close()
+        
+        keyboard = []
+        for row in rows:
+            btn_text = f"{row[1]} | {row[2]} {format_money(row[3])}"
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"hist_{row[0]}")])
+        keyboard.append([InlineKeyboardButton("⬅️ Đóng", callback_data="close_msg")])
+        
+        await query.edit_message_text("Chọn giao dịch bạn muốn Xóa/Sửa:", reply_markup=InlineKeyboardMarkup(keyboard))
+
     elif data.startswith("hist_"):
         tx_id = data.split("_")[1]
         keyboard = [
             [InlineKeyboardButton("✏️ Sửa", callback_data=f"edit_{tx_id}"),
              InlineKeyboardButton("❌ Xóa", callback_data=f"del_{tx_id}")],
-            [InlineKeyboardButton("⬅️ Quay lại", callback_data="back_hist")]
+            [InlineKeyboardButton("⬅️ Quay lại", callback_data="manage_recent")]
         ]
         await query.edit_message_text("Bạn muốn làm gì?", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -299,8 +333,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         await query.edit_message_text("✅ Đã xóa giao dịch thành công.")
 
-    elif data == "back_hist":
-        await query.edit_message_text("Đã huỷ thao tác. Gõ /start hoặc bấm menu.")
+    elif data == "close_msg":
+        await query.message.delete()
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
@@ -314,7 +348,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- 5. CHẠY BOT ---
 def main():
     init_db()
-    # Lấy BOT_TOKEN từ biến môi trường của Railway
     TOKEN = os.environ.get("BOT_TOKEN")
     if not TOKEN:
         print("LỖI: Chưa cấu hình BOT_TOKEN")
