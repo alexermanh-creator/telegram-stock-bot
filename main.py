@@ -37,7 +37,6 @@ def init_db():
     c.execute("SELECT COUNT(*) FROM transactions")
     tx_count = c.fetchone()[0]
     
-    # Nạp dữ liệu gốc nếu DB trống
     if tx_count <= 4:
         c.execute("DELETE FROM assets")
         c.execute("DELETE FROM transactions")
@@ -96,6 +95,24 @@ def format_m(amount):
 
 def format_money(amount):
     return f"{int(amount):,}"
+
+# HÀM DỊCH SỐ THÔNG MINH (VD: 10tr -> 10000000)
+def parse_amount(text):
+    text_lower = text.lower().strip().replace(',', '').replace(' ', '')
+    # Tìm kiếm mẫu số + chữ (VD: 10.5tr, 50m, 1ty)
+    match = re.search(r'^([\d\.]+)(tr|triệu|trieu|m|tỷ|ty|k|nghìn)?$', text_lower)
+    if match:
+        val = float(match.group(1))
+        unit = match.group(2)
+        if unit in ['tr', 'triệu', 'trieu', 'm']:
+            return val * 1000000
+        elif unit in ['tỷ', 'ty']:
+            return val * 1000000000
+        elif unit in ['k', 'nghìn']:
+            return val * 1000
+        else:
+            return val # Nếu gõ số trơn (10000000)
+    return None
 
 def get_stats():
     conn = sqlite3.connect(DB_FILE)
@@ -266,29 +283,29 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚙️ HỆ THỐNG\nSao lưu, phục hồi dữ liệu hoặc xem hướng dẫn:", reply_markup=get_sys_menu())
         return
 
-    # 3.2. KIỂM TRA TRẠNG THÁI NHẬP LIỆU
+    # 3.2. KIỂM TRA TRẠNG THÁI NHẬP LIỆU (CÓ DÙNG parse_amount)
     state = context.user_data.get('state')
     
-    if state == 'awaiting_assets':
-        try:
-            parts = text.lower().split()
+    # NHẬP CẬP NHẬT SỐ DƯ (MỚI)
+    if state and str(state).startswith('awaiting_balance_'):
+        cat = state.split("_")[2]
+        amount = parse_amount(text)
+        if amount is not None:
             conn = sqlite3.connect(DB_FILE)
             c = conn.cursor()
-            for i in range(0, len(parts), 2):
-                cat = parts[i].capitalize()
-                val = float(parts[i+1])
-                c.execute("INSERT OR REPLACE INTO assets (category, current_value) VALUES (?, ?)", (cat, val))
+            c.execute("INSERT OR REPLACE INTO assets (category, current_value) VALUES (?, ?)", (cat, amount))
             conn.commit()
             conn.close()
             context.user_data.clear()
-            await update.message.reply_text("✅ Đã cập nhật số dư các tài sản thành công.")
-        except Exception:
-            await update.message.reply_text("⚠️ Sai cú pháp. Ví dụ:\ncrypto 20000000\nstock 123000000\ncash 10000000")
+            await update.message.reply_text(f"✅ Đã cập nhật số dư của {cat} thành: {format_money(amount)}", reply_markup=get_asset_menu())
+        else:
+            await update.message.reply_text("⚠️ Vui lòng nhập số hợp lệ (VD: 10tr, 15M, 20000000):")
         return
 
+    # NHẬP NẠP/RÚT
     elif state in ['awaiting_nap', 'awaiting_rut']:
-        try:
-            amount = float(text)
+        amount = parse_amount(text)
+        if amount is not None:
             cat = context.user_data.get('category')
             tx_type = 'Nạp' if state == 'awaiting_nap' else 'Rút'
             date_str = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -307,13 +324,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ Đã ghi nhận {tx_type} {format_money(amount)} vào {cat}.", 
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
-        except ValueError:
-            await update.message.reply_text("⚠️ Vui lòng nhập số tiền hợp lệ:")
+        else:
+            await update.message.reply_text("⚠️ Vui lòng nhập số tiền hợp lệ (VD: 10tr, 15M, 20000000):")
         return
 
+    # SỬA LỊCH SỬ
     elif state and str(state).startswith('awaiting_edit_'):
-        try:
-            new_amount = float(text)
+        new_amount = parse_amount(text)
+        if new_amount is not None:
             parts = state.split("_")
             tx_id = parts[2]
             back_to = parts[3]
@@ -328,10 +346,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             page = None if back_to == "recent" else int(back_to)
             msg, markup = get_history_menu(page)
             await update.message.reply_text(f"✅ Đã cập nhật thành {format_money(new_amount)}.\n\n{msg}", reply_markup=markup)
-        except ValueError:
-            await update.message.reply_text("⚠️ Vui lòng nhập số tiền hợp lệ (ví dụ: 15000000):")
+        else:
+            await update.message.reply_text("⚠️ Vui lòng nhập số tiền hợp lệ (VD: 10tr, 15M, 20000000):")
         return
         
+    # XỬ LÝ NLP CHO MỤC TIÊU
     elif state == 'awaiting_target':
         s = get_stats()
         tong_von = s['tong_von']
@@ -341,7 +360,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if 'hòa vốn' in text_lower or 'hoà vốn' in text_lower:
             new_target = tong_von
         else:
-            match_rel = re.search(r'(lãi|lời|âm|lỗ)\s*([\d\.]+)\s*(%|tr|triệu|tỷ|ty)?', text_lower)
+            match_rel = re.search(r'(lãi|lời|âm|lỗ)\s*([\d\.]+)\s*(%|tr|triệu|tỷ|ty|m|k)?', text_lower)
             if match_rel:
                 action = match_rel.group(1)
                 val = float(match_rel.group(2))
@@ -349,23 +368,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 sign = 1 if action in ['lãi', 'lời'] else -1
                 
                 if unit == '%': new_target = tong_von + sign * (tong_von * val / 100)
-                elif unit in ['tr', 'triệu']: new_target = tong_von + sign * (val * 1000000)
+                elif unit in ['tr', 'triệu', 'm']: new_target = tong_von + sign * (val * 1000000)
                 elif unit in ['tỷ', 'ty']: new_target = tong_von + sign * (val * 1000000000)
+                elif unit in ['k', 'nghìn']: new_target = tong_von + sign * (val * 1000)
                 else: new_target = tong_von + sign * val
             else:
-                match_abs = re.search(r'^([\d\.]+)\s*(tr|triệu|tỷ|ty)?$', text_lower)
-                if match_abs:
-                    val = float(match_abs.group(1))
-                    unit = match_abs.group(2)
-                    if unit in ['tr', 'triệu']: new_target = val * 1000000
-                    elif unit in ['tỷ', 'ty']: new_target = val * 1000000000
-                    else: new_target = val
-                else:
-                    try:
-                        clean = text_lower.replace(',', '').replace('.', '').replace(' ', '')
-                        new_target = float(clean)
-                    except ValueError:
-                        pass
+                new_target = parse_amount(text_lower)
         
         if new_target is not None:
             conn = sqlite3.connect(DB_FILE)
@@ -380,7 +388,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_asset_menu()
             )
         else:
-            await update.message.reply_text("⚠️ Không hiểu cú pháp. Bạn có thể gõ: Hòa vốn, Lãi 10%, Âm 50tr, hoặc 500000000:")
+            await update.message.reply_text("⚠️ Không hiểu cú pháp. Bạn có thể gõ: Hòa vốn, Lãi 10%, Âm 50tr, hoặc 500tr:")
         return
 
     # 3.3. XỬ LÝ CÁC NÚT CHỨC NĂNG CỤ THỂ
@@ -422,8 +430,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reply)
 
     elif text == '💵 Cập nhật Số dư':
-        context.user_data['state'] = 'awaiting_assets'
-        await update.message.reply_text("Nhập số dư hiện tại của các tài sản:\n\nVí dụ:\ncrypto 20000000\nstock 123000000\ncash 15000000")
+        keyboard = [
+            [InlineKeyboardButton("🪙 Crypto", callback_data="bal_Crypto"),
+             InlineKeyboardButton("📈 Stock", callback_data="bal_Stock")],
+            [InlineKeyboardButton("💵 Tiền mặt", callback_data="bal_Cash")]
+        ]
+        await update.message.reply_text("Chọn tài sản bạn muốn cập nhật số dư:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif text == '💳 Quỹ Tiền mặt':
         s = get_stats()
@@ -567,7 +579,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == '❓ Hướng dẫn':
         guide = (
             "📘 HƯỚNG DẪN SỬ DỤNG BOT:\n\n"
-            "1️⃣ Quản lý Tài sản: Dùng để xem số dư tổng quát, thiết lập mục tiêu hoặc khai báo lại số dư tiền thực tế lúc này.\n"
+            "1️⃣ Quản lý Tài sản: Dùng để xem số dư tổng quát, thiết lập mục tiêu hoặc cập nhật số dư (hỗ trợ nhập nhanh 10tr, 50m, 1.5 tỷ).\n"
             "2️⃣ Giao dịch: Mỗi khi nạp tiền hay rút tiền khỏi sàn/ví, hãy vào đây ấn Nạp/Rút để bot ghi nhớ Vốn.\n"
             "3️⃣ Thống kê: Xem các biểu đồ và xem danh sách Lịch sử (có thể Sửa/Xóa giao dịch lỡ nhập sai).\n"
             "4️⃣ Hệ thống: Nhớ tải file Backup DB định kỳ về máy nhé!"
@@ -575,7 +587,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(guide)
 
     else:
-        # Nhập sai lệnh thì đưa về Menu chính
         await update.message.reply_text("Lệnh không xác định. Vui lòng sử dụng Menu bên dưới:", reply_markup=get_main_menu())
 
 # --- 4. XỬ LÝ INLINE KEYBOARD (NÚT BẤM DƯỚI TIN NHẮN) ---
@@ -593,12 +604,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         await query.edit_message_text("✅ Đã HOÀN TÁC (xóa) giao dịch bạn vừa nhập thành công!")
 
+    elif data.startswith("bal_"):
+        cat = data.split("_")[1]
+        context.user_data['state'] = f"awaiting_balance_{cat}"
+        await query.edit_message_text(f"Đã chọn {cat}.\nNhập số dư hiện tại (VD: 10tr, 50M, 1.5 tỷ):")
+
     elif data.startswith("cat_"):
         parts = data.split("_")
         action, cat = parts[1], parts[2]
         context.user_data['state'] = f"awaiting_{action}"
         context.user_data['category'] = cat
-        await query.edit_message_text(f"Đã chọn {cat}.\nNhập số tiền {'nạp' if action == 'nap' else 'rút'}:")
+        await query.edit_message_text(f"Đã chọn {cat}.\nNhập số tiền {'nạp' if action == 'nap' else 'rút'} (VD: 500k, 10tr, 50M):")
 
     elif data.startswith("hist_"):
         parts = data.split("_")
@@ -617,7 +633,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tx_id = parts[1]
         back_to = parts[2]
         context.user_data['state'] = f"awaiting_edit_{tx_id}_{back_to}"
-        await query.edit_message_text("📝 Nhập số tiền mới cho giao dịch này:")
+        await query.edit_message_text("📝 Nhập số tiền mới cho giao dịch này (VD: 10tr, 50M):")
 
     elif data.startswith("del_"):
         parts = data.split("_")
