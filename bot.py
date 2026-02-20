@@ -1,70 +1,82 @@
 
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+import os
+from telebot import TeleBot, types
+from database import init_db, seed_data
+from portfolio import get_portfolio, set_value
+from charts import create_allocation_chart
 
-TOKEN = "8411805699:AAEmN8Thtuezey_amr83UZNnUILvHoYb9ME"
+TOKEN = os.getenv("BOT_TOKEN") or "YOUR_TOKEN_HERE"
+bot = TeleBot(TOKEN)
 
-MENU = [
-    ["💰 Tài sản", "📊 Tài sản hiện có"],
-    ["➕ Nạp thêm", "➖ Rút ra"],
-    ["📜 Lịch sử", "📈 Biểu đồ"],
-    ["🥧 Phân bổ", "💾 Backup"],
-    ["♻️ Restore", "🛠 Hướng dẫn"]
-]
+init_db()
+seed_data()
 
-def main_menu():
-    return ReplyKeyboardMarkup(MENU, resize_keyboard=True)
+def menu():
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row("📊 Tài sản","💰 Tài sản hiện có")
+    kb.row("➕ Nạp thêm","➖ Rút ra")
+    kb.row("📜 Lịch sử","📈 Biểu đồ")
+    kb.row("🥧 Phân bổ","💾 Backup")
+    kb.row("♻️ Restore","🛠 Hướng dẫn")
+    return kb
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Chào bạn 👋\nChọn chức năng bên dưới 👇",
-        reply_markup=main_menu()
-    )
+def fmt(x):
+    if x>=1_000_000:
+        return f"{x/1_000_000:.1f}M"
+    return str(x)
 
-async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text or ""
+@bot.message_handler(commands=['start'])
+def start(msg):
+    bot.send_message(msg.chat.id,"👋 PROMAX ULTIMATE READY",reply_markup=menu())
 
-    if "Tài sản hiện có" in text:
-        await update.message.reply_text("👉 Nhập tài sản hiện có Crypto và Stock...")
+@bot.message_handler(func=lambda m: "Tài sản" in m.text)
+def assets(msg):
+    data = get_portfolio()
+    crypto = data["crypto"]
+    stock = data["stock"]
+    total = crypto["value"] + stock["value"]
+    total_profit = crypto["profit"] + stock["profit"]
+    text=f"""💰 TỔNG TÀI SẢN
 
-    elif "Tài sản" in text:
-        await update.message.reply_text("📊 Tổng tài sản demo...")
+{fmt(total)}
+📈 {fmt(total_profit)}
 
-    elif "Nạp" in text:
-        await update.message.reply_text("➕ Nhập số tiền nạp...")
+🪙 Crypto: {fmt(crypto['value'])}
+📈 {fmt(crypto['profit'])} ({crypto['percent']:.1f}%)
 
-    elif "Rút" in text:
-        await update.message.reply_text("➖ Nhập số tiền rút...")
+📈 Stock: {fmt(stock['value'])}
+📈 {fmt(stock['profit'])} ({stock['percent']:.1f}%)
+"""
+    bot.send_message(msg.chat.id,text,reply_markup=menu())
 
-    elif "Lịch" in text:
-        await update.message.reply_text("📜 Lịch sử giao dịch...")
+@bot.message_handler(func=lambda m: "Tài sản hiện có" in m.text)
+def set_asset(msg):
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row("Crypto","Stock")
+    bot.send_message(msg.chat.id,"Chọn danh mục:",reply_markup=kb)
 
-    elif "Biểu" in text:
-        await update.message.reply_text("📈 Biểu đồ tăng trưởng...")
+@bot.message_handler(func=lambda m: m.text in ["Crypto","Stock"])
+def input_asset(msg):
+    cat = "crypto" if m.text=="Crypto" else "stock"
+    bot.send_message(msg.chat.id,"Nhập giá trị:")
+    bot.register_next_step_handler(msg, lambda m: save_asset(m,cat))
 
-    elif "Phân" in text:
-        await update.message.reply_text("🥧 Phân bổ danh mục...")
+def save_asset(msg,cat):
+    try:
+        val=float(msg.text)
+        set_value(cat,val)
+        bot.send_message(msg.chat.id,"✅ Đã cập nhật",reply_markup=menu())
+    except:
+        bot.send_message(msg.chat.id,"❌ Sai dữ liệu",reply_markup=menu())
 
-    elif "Backup" in text:
-        await update.message.reply_text("💾 Backup dữ liệu...")
+@bot.message_handler(func=lambda m: "Phân bổ" in m.text)
+def alloc(msg):
+    path = create_allocation_chart()
+    with open(path,"rb") as f:
+        bot.send_photo(msg.chat.id,f,reply_markup=menu())
 
-    elif "Restore" in text:
-        await update.message.reply_text("♻️ Restore dữ liệu...")
+@bot.message_handler(func=lambda m: True)
+def other(msg):
+    bot.send_message(msg.chat.id,"Chức năng đang cập nhật...",reply_markup=menu())
 
-    elif "Hướng" in text:
-        await update.message.reply_text("🛠 Hướng dẫn sử dụng bot...")
-
-    else:
-        await update.message.reply_text(
-            "❌ Lệnh không hợp lệ. Vui lòng dùng menu.",
-            reply_markup=main_menu()
-        )
-
-def run():
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router))
-    app.run_polling()
-
-if __name__ == "__main__":
-    run()
+bot.infinity_polling()
