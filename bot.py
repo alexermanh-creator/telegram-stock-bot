@@ -158,7 +158,7 @@ def chart(message):
             total += amount
         else:
             total -= amount
-        dates.append(date)
+        dates.append(str(date))
         totals.append(total)
 
     plt.figure()
@@ -176,10 +176,10 @@ def chart(message):
     os.remove(file_name)
 
 
-# ===== IMPORT DIRECT YOUR EXCEL =====
+# ===== IMPORT 3 TABLES FROM YOUR EXCEL =====
 @bot.message_handler(func=lambda m: m.text == "📥 Import Excel")
 def import_excel_info(message):
-    bot.send_message(message.chat.id, "Gửi file Excel bạn đang dùng")
+    bot.send_message(message.chat.id, "Gửi file Excel của bạn (sẽ import Crypto + Stock)")
 
 
 @bot.message_handler(content_types=['document'])
@@ -188,37 +188,40 @@ def handle_doc(message):
         file_info = bot.get_file(message.document.file_id)
         downloaded = bot.download_file(file_info.file_path)
 
-        file_name = "import.xlsx"
-        with open(file_name, "wb") as f:
+        fname = "import.xlsx"
+        with open(fname, "wb") as f:
             f.write(downloaded)
 
-        wb = load_workbook(file_name, data_only=True)
+        wb = load_workbook(fname, data_only=True)
         ws = wb.active
 
         count = 0
 
-        for row in ws.iter_rows(values_only=True):
+        # ===== CRYPTO TABLE (cols A-D approx) =====
+        for row in ws.iter_rows(min_row=6, max_col=4, values_only=True):
+            date_in, amount_in, date_out, amount_out = row
 
-            if not row:
-                continue
+            if date_in and amount_in:
+                add_transaction(message.from_user.id, "crypto", "deposit", float(amount_in), str(date_in))
+                count += 1
 
-            # detect deposit crypto
-            try:
-                if isinstance(row[0], str) and isinstance(row[1], (int, float)):
-                    add_transaction(message.from_user.id, "crypto", "deposit", float(row[1]), str(row[0]))
-                    count += 1
-            except:
-                pass
+            if date_out and amount_out:
+                add_transaction(message.from_user.id, "crypto", "withdraw", float(amount_out), str(date_out))
+                count += 1
 
-            # detect withdraw crypto
-            try:
-                if len(row) > 3 and isinstance(row[2], str) and isinstance(row[3], (int, float)):
-                    add_transaction(message.from_user.id, "crypto", "withdraw", float(row[3]), str(row[2]))
-                    count += 1
-            except:
-                pass
+        # ===== STOCK TABLE (cols G-J approx) =====
+        for row in ws.iter_rows(min_row=6, min_col=7, max_col=10, values_only=True):
+            date_in, amount_in, date_out, amount_out = row
 
-        os.remove(file_name)
+            if date_in and amount_in:
+                add_transaction(message.from_user.id, "stock", "deposit", float(amount_in), str(date_in))
+                count += 1
+
+            if date_out and amount_out:
+                add_transaction(message.from_user.id, "stock", "withdraw", float(amount_out), str(date_out))
+                count += 1
+
+        os.remove(fname)
 
         bot.send_message(message.chat.id, f"✅ Import thành công {count} giao dịch", reply_markup=main_menu())
 
