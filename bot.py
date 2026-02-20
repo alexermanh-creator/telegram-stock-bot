@@ -34,17 +34,6 @@ def category_menu():
 def start(msg):
     bot.send_message(msg.chat.id, "🤖 Bot Quản Lý Tài Sản PRO (Buttons Only)", reply_markup=main_menu())
 
-# ===== HELP =====
-@bot.message_handler(func=lambda m: m.text == "📘 Hướng dẫn")
-def help_menu(msg):
-    bot.send_message(msg.chat.id,
-        "Dùng nút để thao tác.\n"
-        "Nạp/Rút/Value → chọn danh mục → nhập số tiền.\n"
-        "Sửa/Xóa → xem Lịch sử để lấy ID.",
-        reply_markup=main_menu()
-    )
-
-# ===== REPORT =====
 @bot.message_handler(func=lambda m: m.text == "📊 Tài sản")
 def report(msg):
     data, total_value, total_profit, total_percent = get_report(msg.from_user.id)
@@ -55,7 +44,6 @@ def report(msg):
     text += f"💰 Tổng tài sản: {total_value:,.0f}\n📈 Tổng lãi/lỗ: {total_profit:,.0f} ({total_percent:.2f}%)"
     bot.send_message(msg.chat.id, text, reply_markup=main_menu())
 
-# ===== HISTORY =====
 @bot.message_handler(func=lambda m: m.text == "📜 Lịch sử")
 def history(msg):
     rows = get_history(msg.from_user.id)
@@ -151,7 +139,7 @@ def chart(msg):
     with open(fname,"rb") as f: bot.send_photo(msg.chat.id,f)
     os.remove(fname)
 
-# ===== IMPORT / EXPORT =====
+# ===== IMPORT WITH CURRENT VALUES =====
 def to_date_str(val):
     if isinstance(val, datetime): return val.strftime("%Y-%m-%d")
     return str(val)
@@ -162,7 +150,7 @@ def to_float(val):
 
 @bot.message_handler(func=lambda m: m.text == "📥 Import Excel")
 def import_info(msg):
-    bot.send_message(msg.chat.id, "Gửi file Excel (3 bảng Crypto/Stock)")
+    bot.send_message(msg.chat.id, "Gửi file Excel (sẽ import giao dịch + giá trị hiện tại)")
 
 @bot.message_handler(content_types=['document'])
 def handle_doc(msg):
@@ -173,6 +161,7 @@ def handle_doc(msg):
         with open(fname,"wb") as f: f.write(data)
         wb=load_workbook(fname, data_only=True); ws=wb.active
         count=0
+        # transactions
         for row in ws.iter_rows(min_row=6, max_col=4, values_only=True):
             di,ai,do,ao=row
             a=to_float(ai)
@@ -185,8 +174,20 @@ def handle_doc(msg):
             if di and a: add_transaction(msg.from_user.id,"stock","deposit",a,to_date_str(di)); count+=1
             a=to_float(ao)
             if do and a: add_transaction(msg.from_user.id,"stock","withdraw",a,to_date_str(do)); count+=1
+
+        # current values (custom cells for your file)
+        # Crypto current at L5
+        crypto_val = ws.cell(row=5, column=12).value
+        # Stock current try E5 then E4
+        stock_val = ws.cell(row=5, column=5).value or ws.cell(row=4, column=5).value
+
+        if isinstance(crypto_val, (int,float)):
+            set_value(msg.from_user.id, "crypto", crypto_val)
+        if isinstance(stock_val, (int,float)):
+            set_value(msg.from_user.id, "stock", stock_val)
+
         os.remove(fname)
-        bot.send_message(msg.chat.id, f"✅ Import thành công {count} giao dịch", reply_markup=main_menu())
+        bot.send_message(msg.chat.id, f"✅ Import {count} giao dịch + giá trị hiện tại", reply_markup=main_menu())
     except Exception as e:
         bot.send_message(msg.chat.id, f"❌ Lỗi import: {e}", reply_markup=main_menu())
 
