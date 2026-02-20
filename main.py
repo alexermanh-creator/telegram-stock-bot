@@ -3,7 +3,10 @@ import sqlite3
 import logging
 import datetime
 import io
+import matplotlib
+matplotlib.use('Agg') # Tránh lỗi vẽ biểu đồ trên server
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from telegram import (
     Update, ReplyKeyboardMarkup, InlineKeyboardButton, 
     InlineKeyboardMarkup
@@ -26,7 +29,6 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS transactions 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, type TEXT, amount REAL, date TEXT)''')
     
-    # Tạo thêm bảng Settings để lưu Mục tiêu tài sản
     c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value REAL)''')
     c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('target_asset', 500000000)")
     
@@ -104,7 +106,6 @@ def get_stats():
     c.execute("SELECT category, type, SUM(amount) FROM transactions GROUP BY category, type")
     txs = c.fetchall()
     
-    # Lấy mục tiêu tài sản
     c.execute("SELECT value FROM settings WHERE key='target_asset'")
     target_row = c.fetchone()
     target_asset = target_row[0] if target_row else 0
@@ -248,6 +249,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Sai cú pháp. Ví dụ:\ncrypto 20000000\nstock 123000000\ncash 10000000")
         return
 
+    # TÍNH NĂNG MỚI: HOÀN TÁC GIAO DỊCH
     elif state in ['awaiting_nap', 'awaiting_rut']:
         try:
             amount = float(text)
@@ -259,10 +261,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             c = conn.cursor()
             c.execute("INSERT INTO transactions (category, type, amount, date) VALUES (?, ?, ?, ?)", 
                       (cat, tx_type, amount, date_str))
+            tx_id = c.lastrowid # Lấy ID vừa tạo
             conn.commit()
             conn.close()
             context.user_data.clear()
-            await update.message.reply_text(f"✅ Đã ghi nhận {tx_type} {format_money(amount)} vào {cat}.")
+            
+            # Thêm nút Undo (Hoàn tác)
+            keyboard = [[InlineKeyboardButton("↩️ Hoàn tác", callback_data=f"undo_{tx_id}")]]
+            await update.message.reply_text(
+                f"✅ Đã ghi nhận {tx_type} {format_money(amount)} vào {cat}.", 
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
         except ValueError:
             await update.message.reply_text("⚠️ Vui lòng nhập số tiền hợp lệ:")
         return
@@ -289,7 +298,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Vui lòng nhập số tiền hợp lệ (ví dụ: 15000000):")
         return
         
-    # Đổi mục tiêu Cài đặt
     elif state == 'awaiting_target':
         try:
             new_target = float(text)
@@ -383,7 +391,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sizes_all = [s['c_hien_co'], s['s_hien_co'], s['cash_hien_co']]
         colors_all = ['#f39c12', '#3498db', '#2ecc71']
         
-        # Chỉ vẽ các mục có tiền > 0 để biểu đồ không bị lỗi
         filtered_labels = [l for l, sz in zip(labels_all, sizes_all) if sz > 0]
         filtered_sizes = [sz for sz in sizes_all if sz > 0]
         filtered_colors = [c for c, sz in zip(colors_all, sizes_all) if sz > 0]
@@ -406,16 +413,70 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         await update.message.reply_photo(photo=buf, caption=cap_text)
 
+    # TÍNH NĂNG MỚI: BIỂU ĐỒ REAL-TIME DỰA TRÊN LỊCH SỬ DATABASE
     elif text == '📊 Biểu đồ':
-        fig, ax = plt.subplots(figsize=(8,4))
-        ax.plot(['Tháng 1', 'Tháng 2', 'Tháng 3'], [90, 110, 143], marker='o', color='green')
-        ax.set_title("Biểu đồ tăng trưởng tài sản theo thời gian\nROI: -31.5%")
-        ax.grid(True)
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        # Lấy lịch sử giao dịch tăng dần theo thời gian
+        c.execute("SELECT date, type, amount FROM transactions ORDER BY date ASC")
+        txs = c.fetchall()
+        conn.close()
+
+        if not txs:
+            await update.message.reply_text("Chưa có đủ dữ liệu giao dịch để vẽ biểu đồ.")
+            return
+
+        # Tính tổng vốn lũy kế theo từng ngày
+        daily_txs = {}
+        for date_str, tx_type, amt in txs:
+            if date_str not in daily_txs:
+                daily_txs[date_str] = 0
+            if tx_type == 'Nạp': daily_txs[date_str] += amt
+            else: daily_txs[date_str] -= amt
+
+        dates = []
+        capitals = []
+        current_capital = 0
+        sorted_dates = sorted(daily_txs.keys())
+        
+        for d in sorted_dates:
+            current_capital += daily_txs[d]
+            # Chuyển string sang datetime object để plot
+            dates.append(datetime.datetime.strptime(d, "%Y-%m-%d"))
+            capitals.append(current_capital)
+
+        s = get_stats()
+        tong_tai_san = s['tong_tai_san']
+        
+        # Vẽ biểu đồ
+        fig, ax = plt.subplots(figsize=(10, 5))
+        
+        # Đường 1: Vốn thực tế theo thời gian
+        ax.plot(dates, capitals, label="Vốn thực (Nạp - Rút)", color='#3498db', marker='.', linewidth=2)
+        
+        # Điểm 2: Nối từ Vốn hiện tại đến Tài sản hiện tại
+        today = datetime.datetime.now()
+        color_trend = '#2ecc71' if tong_tai_san >= capitals[-1] else '#e74c3c' # Xanh nếu lãi, đỏ nếu lỗ
+        ax.plot([dates[-1], today], [capitals[-1], tong_tai_san], 
+                label=f"Tổng tài sản hiện tại ({format_m(tong_tai_san)})", 
+                color=color_trend, marker='o', linestyle='--', linewidth=2, markersize=8)
+
+        # Format trục X hiển thị tháng/năm
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%Y'))
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+        plt.xticks(rotation=45)
+        
+        ax.set_title(f"BIỂU ĐỒ BIẾN ĐỘNG TÀI SẢN\nLãi/Lỗ: {format_money(s['tong_lai'])} ({s['tong_lai_pct']:.1f}%)", fontsize=12, fontweight='bold')
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.6)
+        
+        plt.tight_layout()
         buf = io.BytesIO()
         plt.savefig(buf, format='png')
         buf.seek(0)
         plt.close(fig)
-        await update.message.reply_photo(photo=buf, caption="Biểu đồ tăng trưởng tài sản theo thời gian\nROI %")
+        
+        await update.message.reply_photo(photo=buf, caption="📈 Trục ngang: Thời gian | Trục dọc: Số tiền\n▫️ Đường Xanh dương: Dòng tiền vốn bạn đổ vào.\n▫️ Đường Đứt nét: Sự chênh lệch (Lãi/lỗ) so với Tài sản hiện tại.")
 
     elif text == '💾 Backup':
         if os.path.exists(DB_FILE):
@@ -439,7 +500,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    if data.startswith("cat_"):
+    # TÍNH NĂNG MỚI: XỬ LÝ NÚT HOÀN TÁC
+    if data.startswith("undo_"):
+        tx_id = data.split("_")[1]
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("DELETE FROM transactions WHERE id = ?", (tx_id,))
+        conn.commit()
+        conn.close()
+        await query.edit_message_text("✅ Đã HOÀN TÁC (xóa) giao dịch bạn vừa nhập thành công!")
+
+    elif data.startswith("cat_"):
         parts = data.split("_")
         action, cat = parts[1], parts[2]
         context.user_data['state'] = f"awaiting_{action}"
