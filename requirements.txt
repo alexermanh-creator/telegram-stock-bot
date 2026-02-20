@@ -1,2 +1,1 @@
-pyTelegramBotAPI
-matplotlib
+python-telegram-bot==20.0
