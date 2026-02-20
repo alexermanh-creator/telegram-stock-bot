@@ -5,7 +5,7 @@ from database import init_db, seed_data
 from portfolio import get_portfolio, set_value
 from charts import create_allocation_chart
 
-TOKEN = os.getenv("BOT_TOKEN") or "YOUR_TOKEN_HERE"
+TOKEN = os.getenv("BOT_TOKEN") or "8411805699:AAEmN8Thtuezey_amr83UZNnUILvHoYb9ME"
 bot = TeleBot(TOKEN)
 
 init_db()
