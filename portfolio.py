@@ -3,70 +3,83 @@ import sqlite3
 
 DB_NAME = "portfolio.db"
 
-def get_conn():
+def conn():
     return sqlite3.connect(DB_NAME)
 
+def get_cash():
+    c = conn()
+    cur = c.cursor()
+    cur.execute("SELECT amount FROM cash WHERE id=1")
+    row = cur.fetchone()
+    c.close()
+    return row[0] if row else 0
+
+def set_cash(val):
+    c = conn()
+    cur = c.cursor()
+    cur.execute("INSERT OR REPLACE INTO cash (id, amount) VALUES (1,?)", (val,))
+    c.commit()
+    c.close()
+
+def set_value(cat, val):
+    c = conn()
+    cur = c.cursor()
+    cur.execute("INSERT OR REPLACE INTO values_now (category, value) VALUES (?,?)", (cat, val))
+    c.commit()
+    c.close()
+
+def add_tx(cat, typ, amt, date):
+    c = conn()
+    cur = c.cursor()
+    cur.execute("INSERT INTO transactions (category,type,amount,date) VALUES (?,?,?,?)", (cat, typ, amt, date))
+    c.commit()
+    c.close()
+
 def get_report():
-    conn = get_conn()
-    c = conn.cursor()
+    c = conn()
+    cur = c.cursor()
 
-    categories = ["crypto", "stock"]
     result = {}
-
+    total_deposit = 0
+    total_withdraw = 0
     total_value = 0
-    total_capital = 0
 
-    for cat in categories:
-        c.execute(
-            "SELECT type, SUM(amount) FROM transactions WHERE category=? GROUP BY type",
-            (cat,),
-        )
+    for cat in ["crypto","stock"]:
+        cur.execute("SELECT type, SUM(amount) FROM transactions WHERE category=? GROUP BY type", (cat,))
+        dep = 0
+        wd = 0
+        for t,v in cur.fetchall():
+            if t == "deposit":
+                dep = v or 0
+            if t == "withdraw":
+                wd = v or 0
 
-        deposit = 0
-        withdraw = 0
+        cur.execute("SELECT value FROM values_now WHERE category=?", (cat,))
+        row = cur.fetchone()
+        val = row[0] if row else 0
 
-        for ttype, total in c.fetchall():
-            if ttype == "deposit":
-                deposit = total or 0
-            if ttype == "withdraw":
-                withdraw = total or 0
+        capital = dep - wd
+        profit = val - capital
+        percent = (profit/capital*100) if capital else 0
 
-        c.execute("SELECT value FROM values_now WHERE category=?", (cat,))
-        row = c.fetchone()
-        value = row[0] if row else 0
-
-        capital = deposit - withdraw
-        profit = value - capital
-        percent = (profit / capital * 100) if capital != 0 else 0
-
-        total_value += value
-        total_capital += capital
+        total_deposit += dep
+        total_withdraw += wd
+        total_value += val
 
         result[cat] = {
-            "deposit": deposit,
-            "withdraw": withdraw,
-            "value": value,
+            "deposit": dep,
+            "withdraw": wd,
+            "value": val,
             "profit": profit,
-            "percent": percent,
+            "percent": percent
         }
 
-    total_profit = total_value - total_capital
-    total_percent = (total_profit / total_capital * 100) if total_capital != 0 else 0
+    cash = get_cash()
+    total_value += cash
+    invest_value = total_value - cash
+    total_profit = total_value - (total_deposit - total_withdraw + cash)
+    total_percent = (total_profit/(total_deposit-total_withdraw+cash)*100) if (total_deposit-total_withdraw+cash) else 0
 
-    conn.close()
-    return result, total_value, total_profit, total_percent
+    c.close()
 
-def set_value(category, value):
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute(
-        '''
-        INSERT INTO values_now (user_id, category, value)
-        VALUES (1, ?, ?)
-        ON CONFLICT(user_id, category)
-        DO UPDATE SET value=excluded.value
-        ''',
-        (category, float(value)),
-    )
-    conn.commit()
-    conn.close()
+    return result, total_value, total_profit, total_percent, total_deposit, total_withdraw, invest_value, cash
