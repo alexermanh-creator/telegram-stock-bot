@@ -1,8 +1,8 @@
+
 import sqlite3
 from datetime import datetime
 
 DB_NAME = "portfolio.db"
-
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -36,12 +36,21 @@ def init_db():
 def add_transaction(user_id, category, ttype, amount, date):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute(
         "INSERT INTO transactions (user_id, category, type, amount, date, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         (user_id, category, ttype, amount, date, datetime.now().isoformat())
     )
+    conn.commit()
+    conn.close()
 
+
+def update_transaction(user_id, tx_id, amount, date):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        "UPDATE transactions SET amount=?, date=? WHERE id=? AND user_id=?",
+        (amount, date, tx_id, user_id)
+    )
     conn.commit()
     conn.close()
 
@@ -57,14 +66,12 @@ def delete_transaction(user_id, tx_id):
 def get_history(user_id):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute("""
     SELECT id, category, type, amount, date
     FROM transactions
     WHERE user_id=?
-    ORDER BY date DESC
+    ORDER BY date ASC
     """, (user_id,))
-
     rows = c.fetchall()
     conn.close()
     return rows
@@ -73,20 +80,17 @@ def get_history(user_id):
 def set_value(user_id, category, value):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute("""
     INSERT INTO values_now (user_id, category, value)
     VALUES (?, ?, ?)
     ON CONFLICT(user_id, category)
     DO UPDATE SET value=excluded.value
     """, (user_id, category, value))
-
     conn.commit()
     conn.close()
 
 
 def get_report(user_id):
-
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
@@ -123,7 +127,6 @@ def get_report(user_id):
 
         capital = deposit - withdraw
         profit = value - capital
-
         percent = (profit / capital * 100) if capital != 0 else 0
 
         total_value += value
