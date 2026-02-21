@@ -1,4 +1,3 @@
-from appsheet_handler import sync_to_appsheet
 import os
 import sqlite3
 import logging
@@ -219,26 +218,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif state in ['awaiting_nap', 'awaiting_rut']:
         amt = parse_amount(text)
         if amt is not None:
-            # 1. Chuẩn bị dữ liệu từ tin nhắn và trạng thái người dùng
             cat, t_type = context.user_data.get('category'), ('Nạp' if state == 'awaiting_nap' else 'Rút')
-            
-            # 2. Lưu vào SQLite (Giữ nguyên phong cách một dòng của bạn)
-            conn = sqlite3.connect(DB_FILE); c = conn.cursor(); c.execute("INSERT INTO transactions (category, type, amount, date) VALUES (?, ?, ?, ?)", (cat, t_type, amt, datetime.datetime.now().strftime("%Y-%m-%d"))); tx_id = c.lastrowid; conn.commit(); conn.close()
-            
-            # 3. ĐỒNG BỘ SANG APPSHEET (Chạy ngầm để không treo Bot)
-            try:
-                import threading
-                # Gửi dữ liệu chi tiêu (như mua sạc Anker hay đầu tư ICT) sang AppSheet
-                threading.Thread(
-                    target=sync_to_appsheet, 
-                    args=(cat, amt, "Gửi từ Telegram", t_type)
-                ).start()
-            except Exception as e:
-                logging.error(f"❌ Lỗi sync AppSheet: {e}")
-
-            # 4. Phản hồi và làm sạch trạng thái
+            conn = sqlite3.connect(DB_FILE); c = conn.cursor(); c.execute("INSERT INTO transactions (category, type, amount, date) VALUES (?, ?, ?, ?)", (cat, t_type, amt, datetime.datetime.now().strftime("%Y-%m-%d"))); tx_id = c.lastrowid; conn.commit(); conn.close(); context.user_data.clear()
             kb = [[InlineKeyboardButton("↩️ Hoàn tác", callback_data=f"undo_{tx_id}")]]
-            context.user_data.clear() 
             await update.message.reply_text(f"✅ Đã ghi nhận {t_type} vào {cat}.", reply_markup=InlineKeyboardMarkup(kb))
             
     elif state and str(state).startswith('awaiting_edit_'):
@@ -271,7 +253,3 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__': main()
-
-
-
-
