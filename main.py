@@ -1,3 +1,4 @@
+from appsheet_handler import sync_to_appsheet
 import os
 import sqlite3
 import logging
@@ -253,4 +254,5 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__': main()
+
 
