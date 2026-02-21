@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.ticker as ticker
 from ai_assistant import portfolio_ai
+from exporter import reporter
 from telegram import (
     Update, ReplyKeyboardMarkup, InlineKeyboardButton, 
     InlineKeyboardMarkup
@@ -77,7 +78,12 @@ def get_stats():
 def get_main_menu(): return ReplyKeyboardMarkup([['🏦 Quản lý Tài sản', '💸 Giao dịch'], ['📊 Thống kê', '🤖 Trợ lý AI'], ['⚙️ Hệ thống']], resize_keyboard=True)
 def get_asset_menu(): return ReplyKeyboardMarkup([['💰 Xem Tổng Tài sản', '💵 Cập nhật Số dư'], ['💳 Quỹ Tiền mặt', '🎯 Đặt Mục tiêu'], ['🏠 Menu Chính']], resize_keyboard=True)
 def get_stats_menu(): return ReplyKeyboardMarkup([['📜 Lịch sử', '🥧 Phân bổ', '📈 Biểu đồ'], ['🏠 Menu Chính']], resize_keyboard=True)
-def get_sys_menu(): return ReplyKeyboardMarkup([['💾 Backup DB', '♻️ Restore DB'], ['❓ Hướng dẫn', '🏠 Menu Chính']], resize_keyboard=True)
+def get_sys_menu(): 
+    return ReplyKeyboardMarkup([
+        ['💾 Backup DB', '♻️ Restore DB'], # Hàng 1
+        ['📊 Xuất Excel', '❓ Hướng dẫn'], # Hàng 2
+        ['🏠 Menu Chính']                 # Hàng 3
+    ], resize_keyboard=True)
 
 def get_history_menu(page=None):
     conn = sqlite3.connect(DB_FILE)
@@ -112,7 +118,28 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == '🏦 Quản lý Tài sản': await update.message.reply_text("🏦 QUẢN LÝ TÀI SẢN", reply_markup=get_asset_menu())
     elif text == '📊 Thống kê': await update.message.reply_text("📊 THỐNG KÊ", reply_markup=get_stats_menu())
-    elif text == '⚙️ Hệ thống': await update.message.reply_text("⚙️ HỆ THỐNG", reply_markup=get_sys_menu())
+    elif text == '⚙️ Hệ thống':
+        await update.message.reply_text("⚙️ HỆ THỐNG", reply_markup=get_sys_menu())
+
+    elif text == '💾 Backup DB':
+        if os.path.exists(DB_FILE):
+            await update.message.reply_document(document=open(DB_FILE, 'rb'), filename=DB_FILE, caption="📦 Đây là file Database dự phòng. Hãy tải về và cất giữ cẩn thận!")
+        else:
+            await update.message.reply_text("❌ Chưa có dữ liệu để backup.")
+
+    elif text == '♻️ Restore DB':
+        await update.message.reply_text("🛠️ **HƯỚNG DẪN KHÔI PHỤC:**\n\nHãy gửi file `portfolio.db` lên đây. Bot sẽ tự động nhận diện và khôi phục dữ liệu cho bạn.", parse_mode='Markdown')
+
+    elif text == '📊 Xuất Excel':
+        loading = await update.message.reply_text("⌛ Đang trích xuất dữ liệu và vẽ biểu đồ...")
+        # Gọi module exporter
+        excel_file = reporter.export_excel_report()
+        if excel_file:
+            await loading.delete()
+            await update.message.reply_document(document=excel_file, filename=f"Bao_Cao_{datetime.datetime.now().strftime('%d-%m-%Y')}.xlsx", caption="✅ Gửi bạn báo cáo tài chính chi tiết.")
+        else:
+            await loading.delete()
+            await update.message.reply_text("❌ Lỗi: Không thể tạo báo cáo. Có thể Database đang trống.")
     elif text == '💸 Giao dịch': await update.message.reply_text("💸 GIAO DỊCH", reply_markup=ReplyKeyboardMarkup([['➕ Nạp tiền', '➖ Rút tiền'], ['🏠 Menu Chính']], resize_keyboard=True))
 
     elif text == '🤖 Trợ lý AI':
@@ -226,3 +253,4 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__': main()
+
