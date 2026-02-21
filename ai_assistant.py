@@ -1,43 +1,59 @@
 import os
 import asyncio
-import google.generativeai as genai
+import requests
+import json
 
 # Lấy Key từ Railway Variables
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
 class PortfolioAI:
     def __init__(self):
-        self.model = None
-        if GEMINI_KEY:
-            try:
-                genai.configure(api_key=GEMINI_KEY)
-                # Sử dụng model chuẩn
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
-            except Exception as e:
-                print(f"Lỗi khởi tạo AI: {e}")
+        self.api_key = GEMINI_KEY
+        # BỎ QUA THƯ VIỆN SDK, CHỈ ĐỊNH ĐÍCH DANH ĐƯỜNG LINK GỐC CỦA GOOGLE
+        self.url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.api_key}"
 
     async def get_advice(self, user_query, s):
-        if not self.model:
+        if not self.api_key:
             return "⚠️ Chưa cấu hình GEMINI_API_KEY trên Railway."
         
-        # Ngữ cảnh dữ liệu gửi sang AI
-        prompt = (
-            f"Bạn là chuyên gia tài chính. Dữ liệu thực tế của tôi:\n"
-            f"- Tổng tài sản: {int(s['total_val']):,} VNĐ\n"
-            f"- Lãi/Lỗ tổng: {s['total_lai_pct']:.2f}%\n"
-            f"- Crypto: {int(s['details']['Crypto']['hien_co']):,} VNĐ\n"
-            f"- Chứng khoán: {int(s['details']['Stock']['hien_co']):,} VNĐ\n"
+        # Ngữ cảnh dữ liệu gửi sang AI (Đọc từ main.py)
+        prompt_text = (
+            f"Bạn là chuyên gia tư vấn tài chính cá nhân. Dữ liệu thực tế của tôi:\n"
+            f"- Tổng tài sản: {int(s.get('total_val', 0)):,} VNĐ\n"
+            f"- Lãi/Lỗ tổng: {s.get('total_lai_pct', 0):.2f}%\n"
+            f"- Crypto: {int(s.get('details', {}).get('Crypto', {}).get('hien_co', 0)):,} VNĐ\n"
+            f"- Chứng khoán: {int(s.get('details', {}).get('Stock', {}).get('hien_co', 0)):,} VNĐ\n"
             f"Câu hỏi: {user_query}\n"
-            f"Hãy trả lời bằng tiếng Việt, phân tích ngắn gọn và thông minh."
+            f"Yêu cầu: Trả lời bằng tiếng Việt, phân tích thông minh, chuyên nghiệp và thân thiện."
         )
 
-        try:
-            # Chạy trong thread riêng để không block Bot Telegram
-            response = await asyncio.to_thread(self.model.generate_content, prompt)
-            return response.text
-        except Exception as e:
-            # In lỗi chi tiết nếu vẫn bị 404
-            return f"❌ Lỗi AI: {str(e)}"
+        # Định dạng gói tin gửi đi theo chuẩn cấu trúc của Google
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt_text}]
+            }]
+        }
+        headers = {'Content-Type': 'application/json'}
 
-# Khởi tạo instance
+        # Hàm gửi request trực tiếp
+        def make_request():
+            response = requests.post(self.url, headers=headers, data=json.dumps(payload))
+            response.raise_for_status() # Bắt lỗi nếu đường link hoặc Key sai
+            return response.json()
+
+        try:
+            # Chạy không đồng bộ để bot Telegram không bị treo
+            data = await asyncio.to_thread(make_request)
+            
+            # Bóc tách câu trả lời từ gói tin JSON tải về
+            text_response = data['candidates'][0]['content']['parts'][0]['text']
+            return text_response
+            
+        except requests.exceptions.HTTPError as err:
+            # Nếu Key sai hoặc hết hạn, nó sẽ báo lỗi chi tiết ở đây
+            return f"❌ Lỗi API Google: {err.response.text}"
+        except Exception as e:
+            return f"❌ Lỗi xử lý dữ liệu: {str(e)}"
+
+# Khởi tạo đối tượng
 portfolio_ai = PortfolioAI()
