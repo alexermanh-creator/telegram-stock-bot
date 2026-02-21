@@ -92,7 +92,7 @@ def get_asset_menu(): return ReplyKeyboardMarkup([['💰 Xem Tổng Tài sản',
 def get_stats_menu(): return ReplyKeyboardMarkup([['📜 Lịch sử', '🥧 Phân bổ', '📈 Biểu đồ'], ['🏠 Menu Chính']], resize_keyboard=True)
 def get_sys_menu(): return ReplyKeyboardMarkup([['💾 Backup DB', '♻️ Restore DB'], ['❓ Hướng dẫn', '🏠 Menu Chính']], resize_keyboard=True)
 
-# --- 4. FORM LỊCH SỬ PHÂN TRANG (10 MỤC) ---
+# --- 4. FORM LỊCH SỬ PHÂN TRANG ---
 def get_history_menu(page=None):
     conn = sqlite3.connect(DB_FILE)
     rows = conn.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY date DESC, id DESC").fetchall(); conn.close()
@@ -128,6 +128,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         await update.message.reply_text("👋 Chào mừng bạn đến với Portfolio Manager Pro!", reply_markup=get_main_menu()); return
 
+    # Xóa State nếu người dùng bấm một nút Menu bất kỳ
+    menu_buttons = [
+        '🏦 Quản lý Tài sản', '📊 Thống kê', '⚙️ Hệ thống', '💸 Giao dịch', 
+        '💰 Xem Tổng Tài sản', '💵 Cập nhật Số dư', '💳 Quỹ Tiền mặt', '🎯 Đặt Mục tiêu',
+        '📜 Lịch sử', '🥧 Phân bổ', '📈 Biểu đồ', '💾 Backup DB', '❓ Hướng dẫn'
+    ]
+    if text in menu_buttons:
+        context.user_data.clear()
+        state = None
+
     # Các nút Menu
     if text == '🏦 Quản lý Tài sản': await update.message.reply_text("🏦 QUẢN LÝ TÀI SẢN", reply_markup=get_asset_menu())
     elif text == '📊 Thống kê': await update.message.reply_text("📊 THỐNG KÊ", reply_markup=get_stats_menu())
@@ -158,11 +168,25 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🤖 **Trợ lý AI đã kết nối!**\nBạn muốn hỏi gì về danh mục của mình?"); return
 
     elif state == 'chatting_ai':
-        s = get_stats()
-        loading = await update.message.reply_text("⌛ AI đang phân tích dữ liệu...")
-        reply = await portfolio_ai.get_advice(text, s)
-        await loading.delete()
-        await update.message.reply_text(reply, parse_mode='Markdown')
+        try:
+            s = get_stats()
+            loading = await update.message.reply_text("⌛ AI đang phân tích dữ liệu...")
+            reply = await portfolio_ai.get_advice(text, s)
+            
+            # Xóa tin nhắn loading (có thể lỗi nếu tin nhắn bị trôi, nên dùng try)
+            try:
+                await loading.delete()
+            except: pass
+
+            # Nếu định dạng Markdown bị lỗi (do AI trả về ký tự lạ), chuyển sang gửi text thường
+            try:
+                await update.message.reply_text(reply, parse_mode='Markdown')
+            except Exception:
+                await update.message.reply_text(reply)
+
+        except Exception as e:
+            # BOT KHÔNG BAO GIỜ IM LẶNG NỮA: Sẽ in thẳng lỗi ra màn hình
+            await update.message.reply_text(f"❌ Lỗi Bot khi xử lý AI: {str(e)}")
         return
 
     # --- BIỂU ĐỒ & THỐNG KÊ ---
@@ -279,28 +303,4 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pg = None if p[2] == "recent" else int(p[2]); m, mk = get_history_menu(pg); await q.edit_message_text("✅ Đã xóa giao dịch.\n\n" + m, reply_markup=mk)
     elif d.startswith("view_page_"):
         m, mk = get_history_menu(int(d.split("_")[2])); await q.edit_message_text(m, reply_markup=mk)
-    elif d == "back_to_recent" or d.startswith("back_view_"):
-        m, mk = get_history_menu(); await q.edit_message_text(m, reply_markup=mk)
-    elif d.startswith("bal_"):
-        context.user_data['state'] = f"awaiting_balance_{d.split('_')[1]}"; await q.edit_message_text(f"Nhập số dư {d.split('_')[1]}:")
-    elif d.startswith("cat_"):
-        p = d.split("_"); context.user_data['state'], context.user_data['category'] = f"awaiting_{p[1]}", p[2]; await q.edit_message_text(f"Nhập tiền {p[1]} cho {p[2]}:")
-
-# --- 7. XỬ LÝ NHẬN FILE BACKUP ---
-async def handle_doc(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.document.file_name == DB_FILE:
-        f = await update.message.document.get_file(); await f.download_to_drive(DB_FILE)
-        await update.message.reply_text("✅ Restore Database thành công!", reply_markup=get_main_menu())
-
-# --- 8. KHỞI CHẠY BOT ---
-def main():
-    init_db(); token = os.environ.get("BOT_TOKEN")
-    if not token: logging.error("Lỗi: Không tìm thấy BOT_TOKEN"); return
-    app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("start", handle_text))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_doc))
-    app.add_handler(CallbackQueryHandler(handle_callback))
-    app.run_polling()
-
-if __name__ == '__main__': main()
+    elif d == "back_to
