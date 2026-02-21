@@ -1,11 +1,5 @@
 python-telegram-bot
 matplotlib
 pandas
-openpyxl
-python-telegram-bot
-matplotlib
-pandas
 requests
 openpyxl
-
-
