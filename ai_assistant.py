@@ -3,6 +3,7 @@ import asyncio
 import requests
 import sqlite3
 import datetime
+import time  # Thêm thư viện time để xử lý độ trễ
 
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 DB_FILE = 'portfolio.db'
@@ -11,7 +12,6 @@ class PortfolioAI:
     def __init__(self):
         self.api_key = GEMINI_KEY
         self.model_url = None
-        # BỘ NHỚ TRONG: Lưu lại 5 vòng hội thoại gần nhất (10 tin nhắn)
         self.chat_history = [] 
 
     def get_dynamic_model_url(self):
@@ -64,13 +64,9 @@ class PortfolioAI:
         if not url:
             return "❌ API Key không hợp lệ."
 
-        # 1. BƠM TẦM NHÌN VĨ MÔ (Thời gian thực)
         current_time = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-        
-        # Lấy lịch sử giao dịch
         all_txs = self.get_all_history()
 
-        # 2. CHẾ ĐỘ STRESS TEST (Kích hoạt nếu câu hỏi có chứa từ khóa)
         stress_test_mode = ""
         query_lower = user_query.lower()
         if "test danh mục" in query_lower or "stress test" in query_lower or "khủng hoảng" in query_lower:
@@ -80,7 +76,6 @@ class PortfolioAI:
                 f"Lượng tiền mặt hiện tại có đủ để trung bình giá không hay sẽ bị kẹt thanh khoản? Hãy dọa khách hàng một chút để họ tỉnh táo."
             )
 
-        # 3. ĐỊNH HÌNH NHÂN CÁCH & BỐI CẢNH (CHỈ BƠM VÀO CÂU HỎI HIỆN TẠI)
         system_context = (
             f"ĐÓNG VAI: Bạn là một Wealth Manager khắt khe. Thời gian hiện tại là {current_time}, thị trường Việt Nam.\n"
             f"📊 DỮ LIỆU TÀI CHÍNH:\n"
@@ -100,12 +95,9 @@ class PortfolioAI:
             f"CÂU HỎI CỦA TÔI: {user_query}"
         )
 
-        # 4. XỬ LÝ TRÍ NHỚ HỘI THOẠI (Context Memory)
-        # Chỉ giữ lại 8 tin nhắn gần nhất (4 vòng hội thoại) để tránh nặng bộ nhớ
         if len(self.chat_history) > 8:
             self.chat_history = self.chat_history[-8:]
 
-        # Tạo danh sách nội dung gửi đi bao gồm: Lịch sử cũ + Câu hỏi mới (kèm ngữ cảnh)
         api_contents = self.chat_history.copy()
         api_contents.append({"role": "user", "parts": [{"text": system_context}]})
 
@@ -115,22 +107,39 @@ class PortfolioAI:
         }
         headers = {'Content-Type': 'application/json'}
 
+        # --- CƠ CHẾ CHỐNG LỖI 429 BẰNG CÁCH TỰ ĐỘNG THỬ LẠI ---
         def fetch_google_api():
-            try:
-                response = requests.post(url, headers=headers, json=payload, timeout=25)
-                response.raise_for_status() 
-                return response.json()['candidates'][0]['content']['parts'][0]['text']
-            except requests.exceptions.HTTPError as err:
-                return f"❌ Lỗi từ Google (Mã {err.response.status_code}):\n{err.response.text}"
-            except Exception as e:
-                return f"❌ Lỗi đường truyền: {str(e)}"
+            max_retries = 3 # Thử lại tối đa 3 lần
+            for attempt in range(max_retries):
+                try:
+                    # Giới hạn timeout 25s cho mỗi lần thử
+                    response = requests.post(url, headers=headers, json=payload, timeout=25)
+                    response.raise_for_status() 
+                    return response.json()['candidates'][0]['content']['parts'][0]['text']
+                
+                except requests.exceptions.HTTPError as err:
+                    # NẾU GẶP LỖI 429 (Quá tải), tự động chờ rồi thử lại
+                    if err.response.status_code == 429:
+                        if attempt < max_retries - 1:
+                            time.sleep(5) # Nghỉ ngầm 5 giây để Google hạ nhiệt rồi gọi lại
+                            continue
+                        else:
+                            return "❌ AI đang quá tải (Lỗi 429). Hệ thống đã tự động thử lại 3 lần nhưng chưa được. Bạn vui lòng nghỉ tay uống ngụm nước, 1 phút sau hỏi lại nhé!"
+                    
+                    # Nếu là lỗi khác (như hết hạn Key), báo lỗi luôn
+                    return f"❌ Lỗi từ Google (Mã {err.response.status_code}):\n{err.response.text}"
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        time.sleep(3)
+                        continue
+                    return f"❌ Lỗi đường truyền: {str(e)}"
 
         try:
-            ai_reply = await asyncio.wait_for(asyncio.to_thread(fetch_google_api), timeout=25.0)
+            # Tăng tổng thời gian chờ lên 45s để nới rộng không gian cho các lần retry chạy ngầm
+            ai_reply = await asyncio.wait_for(asyncio.to_thread(fetch_google_api), timeout=45.0)
             
-            # NẾU THÀNH CÔNG, LƯU LẠI VÀO TRÍ NHỚ
-            if not ai_reply.startswith("❌"):
-                self.chat_history.append({"role": "user", "parts": [{"text": user_query}]}) # Lưu câu hỏi gốc (không kèm data để đỡ rác)
+            if not ai_reply.startswith("❌") and not ai_reply.startswith("⏳"):
+                self.chat_history.append({"role": "user", "parts": [{"text": user_query}]}) 
                 self.chat_history.append({"role": "model", "parts": [{"text": ai_reply}]})
                 
             return ai_reply
