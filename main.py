@@ -25,6 +25,8 @@ from telegram.ext import (
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
+    # Thử đổi tên model thành 'gemini-1.5-flash' (bỏ tiền tố models/) 
+    # hoặc dùng 'gemini-1.5-flash-latest'
     ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- NẠP DỮ LIỆU TỪ FILE data.py ---
@@ -250,3 +252,4 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback)); app.run_polling()
 
 if __name__ == '__main__': main()
+
