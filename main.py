@@ -20,8 +20,8 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes
 )
 
-# --- CẤU HÌNH TRỢ LÝ AI (Nâng cấp Pro) ---
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY") # Bạn lấy key tại aistudio.google.com
+# --- 0. CẤU HÌNH AI GEMINI ---
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
     ai_model = genai.GenerativeModel('gemini-1.5-flash')
@@ -74,9 +74,11 @@ def get_stats():
     tx_data = c.execute("SELECT category, type, SUM(amount) FROM transactions GROUP BY category, type").fetchall()
     target_asset = (c.execute("SELECT value FROM settings WHERE key='target_asset'").fetchone() or [500000000])[0]
     conn.close()
+
     s = {'Crypto': {'Nạp': 0, 'Rút': 0}, 'Stock': {'Nạp': 0, 'Rút': 0}, 'Cash': {'Nạp': 0, 'Rút': 0}}
     for cat, t_type, amt in tx_data:
         if cat in s: s[cat][t_type] = amt
+
     res, tv, tn, trut = {}, 0, 0, 0
     for cat in ['Crypto', 'Stock', 'Cash']:
         hc = assets.get(cat, 0); nap = s[cat]['Nạp']; rut = s[cat]['Rút']
@@ -84,28 +86,22 @@ def get_stats():
         pct = (lai / von * 100) if von != 0 else 0
         res[cat] = {'hien_co': hc, 'nap': nap, 'rut': rut, 'von': von, 'lai': lai, 'pct': pct}
         tv += hc; tn += nap; trut += rut
+
     tvon = tn - trut; tlai = tv - tvon; tlai_pct = (tlai / tvon * 100) if tvon != 0 else 0
     prog = (tv / target_asset * 100) if target_asset > 0 else 0
     return {'total_val': tv, 'total_von': tvon, 'total_lai': tlai, 'total_lai_pct': tlai_pct, 'total_nap': tn, 'total_rut': trut, 'target_asset': target_asset, 'progress': prog, 'details': res}
 
 # --- 3. MENU KEYBOARD ---
-def get_main_menu():
-    return ReplyKeyboardMarkup([['🏦 Quản lý Tài sản', '💸 Giao dịch'], ['📊 Thống kê', '🤖 Trợ lý AI'], ['⚙️ Hệ thống']], resize_keyboard=True)
-
-def get_asset_menu():
-    return ReplyKeyboardMarkup([['💰 Xem Tổng Tài sản', '💵 Cập nhật Số dư'], ['💳 Quỹ Tiền mặt', '🎯 Đặt Mục tiêu'], ['🏠 Menu Chính']], resize_keyboard=True)
-
-def get_stats_menu():
-    return ReplyKeyboardMarkup([['📜 Lịch sử', '🥧 Phân bổ', '📈 Biểu đồ'], ['🏠 Menu Chính']], resize_keyboard=True)
-
-def get_sys_menu():
-    return ReplyKeyboardMarkup([['💾 Backup DB', '♻️ Restore DB'], ['❓ Hướng dẫn', '🏠 Menu Chính']], resize_keyboard=True)
+def get_main_menu(): return ReplyKeyboardMarkup([['🏦 Quản lý Tài sản', '💸 Giao dịch'], ['📊 Thống kê', '🤖 Trợ lý AI'], ['⚙️ Hệ thống']], resize_keyboard=True)
+def get_asset_menu(): return ReplyKeyboardMarkup([['💰 Xem Tổng Tài sản', '💵 Cập nhật Số dư'], ['💳 Quỹ Tiền mặt', '🎯 Đặt Mục tiêu'], ['🏠 Menu Chính']], resize_keyboard=True)
+def get_stats_menu(): return ReplyKeyboardMarkup([['📜 Lịch sử', '🥧 Phân bổ', '📈 Biểu đồ'], ['🏠 Menu Chính']], resize_keyboard=True)
+def get_sys_menu(): return ReplyKeyboardMarkup([['💾 Backup DB', '♻️ Restore DB'], ['❓ Hướng dẫn', '🏠 Menu Chính']], resize_keyboard=True)
 
 # --- 4. FORM LỊCH SỬ CHUẨN ---
 def get_history_menu(page=None):
     conn = sqlite3.connect(DB_FILE)
     rows = conn.execute("SELECT id, category, type, amount, date FROM transactions ORDER BY date DESC, id DESC").fetchall(); conn.close()
-    if not rows: return "Chưa có giao dịch nào.", None
+    if not rows: return "Chưa có giao dịch.", None
     PAGE_SIZE = 10
     kb = []
     if page is None:
@@ -127,21 +123,21 @@ def get_history_menu(page=None):
         kb.append([InlineKeyboardButton("⬅️ Đóng", callback_data="back_to_recent")])
     return msg, InlineKeyboardMarkup(kb)
 
-# --- 5. XỬ LÝ TEXT ---
+# --- 5. XỬ LÝ CHÍNH ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip(); state = context.user_data.get('state')
 
-    # LỜI CHÀO START & MENU CHÍNH
+    # THÔNG BÁO CHÀO MỪNG START
     if text in ['/start', '🏠 Menu Chính']:
         context.user_data.clear()
         welcome = (
-            "👋 **Chào mừng bạn đến với Portfolio Manager Pro!**\n\n"
-            "Tôi sẽ giúp bạn quản lý tài sản Crypto, Chứng khoán và Tiền mặt một cách khoa học.\n\n"
-            "🚀 **Bắt đầu nhanh:**\n"
-            "- Nhấn **🏦 Quản lý Tài sản** để xem số dư hiện có.\n"
-            "- Nhấn **💸 Giao dịch** để ghi lại các khoản Nạp/Rút.\n"
-            "- Nhấn **🤖 Trợ lý AI** để phân tích danh mục thông minh.\n\n"
-            "Hãy chọn một tính năng bên dưới để bắt đầu!"
+            "👋 **Chào mừng bạn đến với Portfolio Manager AI!**\n\n"
+            "Tôi là trợ lý giúp bạn quản lý tài sản Crypto, Stock và Tiền mặt.\n\n"
+            "🚀 **Bạn có thể:**\n"
+            "- Xem tài sản chi tiết & lãi lỗ thực tế.\n"
+            "- Theo dõi biểu đồ tăng trưởng vốn.\n"
+            "- Hỏi **Trợ lý AI** để phân tích danh mục cá nhân.\n\n"
+            "Hãy chọn một mục bên dưới để bắt đầu!"
         )
         await update.message.reply_text(welcome, parse_mode='Markdown', reply_markup=get_main_menu()); return
 
@@ -149,32 +145,37 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == '🏦 Quản lý Tài sản': await update.message.reply_text("🏦 QUẢN LÝ TÀI SẢN", reply_markup=get_asset_menu())
     elif text == '📊 Thống kê': await update.message.reply_text("📊 THỐNG KÊ", reply_markup=get_stats_menu())
     elif text == '⚙️ Hệ thống': await update.message.reply_text("⚙️ HỆ THỐNG", reply_markup=get_sys_menu())
-    elif text == '💸 Giao dịch': await update.message.reply_text("💸 GIAO DỊCH", reply_markup=get_tx_menu())
+    elif text == '💸 Giao dịch': await update.message.reply_text("💸 GIAO DỊCH", reply_markup=ReplyKeyboardMarkup([['➕ Nạp tiền', '➖ Rút tiền'], ['🏠 Menu Chính']], resize_keyboard=True))
 
-    # TRỢ LÝ AI
+    # XỬ LÝ TRỢ LÝ AI
     elif text == '🤖 Trợ lý AI':
         context.user_data['state'] = 'chatting_ai'
-        await update.message.reply_text("🤖 **Trợ lý AI đang sẵn sàng!**\nBạn có thể hỏi bất cứ điều gì về tài chính hoặc yêu cầu tôi phân tích danh mục của bạn (ví dụ: 'Danh mục của tôi có ổn không?')")
+        await update.message.reply_text("🤖 **AI đã sẵn sàng!**\nBạn hãy đặt câu hỏi về danh mục hoặc thị trường (VD: 'Danh mục của tôi có ổn không?')")
         return
 
     if state == 'chatting_ai':
         if not GEMINI_KEY:
-            await update.message.reply_text("⚠️ Chưa cấu hình API Key cho AI. Vui lòng liên hệ admin.")
-            return
+            await update.message.reply_text("⚠️ Bạn chưa cấu hình `GEMINI_API_KEY` trên Railway."); return
         s = get_stats()
-        prompt = f"Bạn là chuyên gia tài chính. Tổng tài sản người dùng: {format_money(s['total_val'])} VNĐ, Lãi tổng: {s['total_lai_pct']:.1f}%. Danh mục: Crypto {format_money(s['details']['Crypto']['hien_co'])}, Stock {format_money(s['details']['Stock']['hien_co'])}. Hãy trả lời câu hỏi: {text}"
+        prompt = (f"Bạn là chuyên gia tài chính. Đây là dữ liệu người dùng:\n"
+                  f"- Tổng tài sản: {format_money(s['total_val'])} VNĐ\n"
+                  f"- Lãi/lỗ: {s['total_lai_pct']:.1f}%\n"
+                  f"- Crypto: {format_money(s['details']['Crypto']['hien_co'])}\n"
+                  f"- Stock: {format_money(s['details']['Stock']['hien_co'])}\n"
+                  f"Câu hỏi: {text}")
         loading = await update.message.reply_text("⌛ AI đang phân tích...")
         try:
-            res = ai_model.generate_content(prompt); await loading.delete()
-            await update.message.reply_text(res.text, parse_mode='Markdown')
-        except: await update.message.reply_text("❌ AI bận, hãy thử lại sau.")
+            response = ai_model.generate_content(prompt); await loading.delete()
+            await update.message.reply_text(response.text, parse_mode='Markdown')
+        except: await update.message.reply_text("❌ AI hiện đang bận, hãy thử lại sau.")
         return
 
-    # HIỂN THỊ TÀI SẢN CHI TIẾT
+    # TỔNG TÀI SẢN CHI TIẾT
     elif text == '💰 Xem Tổng Tài sản':
         s = get_stats(); d = s['details']
         msg = (f"🏆 *TỔNG TÀI SẢN*\n`{format_money(s['total_val'])}` VNĐ\n"
                f"{'📈' if s['total_lai']>=0 else '📉'} {format_money(s['total_lai'])} ({s['total_lai_pct']:.1f}%)\n"
+               f"🎯 Mục tiêu: {s['progress']:.1f}% (`{format_m(s['total_val'])}` / `{format_m(s['target_asset'])}`)\n"
                f"----------------------------------\n\n"
                f"🟡 *CRYPTO*\n💰 Hiện có: {format_money(d['Crypto']['hien_co'])}\n🏦 Vốn thực: {format_money(d['Crypto']['von'])}\n"
                f"📈 Lãi: {format_money(d['Crypto']['lai'])} ({d['Crypto']['pct']:.1f}%)\n\n"
@@ -192,14 +193,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for d_str in sorted(daily.keys()):
                 cur += daily[d_str]; dates.append(datetime.datetime.strptime(d_str, "%Y-%m-%d")); caps.append(cur)
             fig, ax = plt.subplots(figsize=(10, 5))
-            ax.plot(dates, caps, color='#1f77b4', linewidth=2, label='Vốn thực tích lũy', marker='o', markersize=3)
+            ax.plot(dates, caps, color='#1f77b4', linewidth=2, label='Vốn thực nạp', marker='o', markersize=3)
             ax.fill_between(dates, caps, color='#1f77b4', alpha=0.15)
+            color_t = '#2ecc71' if s['total_val'] >= caps[-1] else '#e74c3c'
+            ax.plot([dates[-1], datetime.datetime.now()], [caps[-1], s['total_val']], label=f"Tài sản hiện có ({format_m(s['total_val'])})", color=color_t, marker='o', linestyle='--', linewidth=2)
             ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f"{x/1000000:,.0f}M"))
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%Y'))
-            ax.grid(True, linestyle='--', alpha=0.4); ax.legend(); ax.set_title("BIẾN ĐỘNG VỐN & TĂNG TRƯỞNG")
+            ax.grid(True, linestyle='--', alpha=0.4); ax.legend(); ax.set_title("BIẾN ĐỘNG VỐN & TÀI SẢN")
             plt.xticks(rotation=45); plt.tight_layout()
             buf = io.BytesIO(); plt.savefig(buf, format='png', dpi=120); plt.close(); buf.seek(0)
-            await update.message.reply_photo(photo=buf, caption="📈 Trục dọc: VNĐ (Triệu) | Trục ngang: Thời gian")
+            await update.message.reply_photo(photo=buf, caption="📈 Chú thích:\n▫️ Đường Xanh: Vốn nạp ròng.\n▫️ Đường Đứt nét: Lãi/Lỗ hiện tại so với vốn.")
 
     elif text == '🥧 Phân bổ':
         s = get_stats(); d = s['details']
@@ -213,34 +216,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == '📜 Lịch sử':
         msg, mk = get_history_menu(); await update.message.reply_text(msg, reply_markup=mk)
 
-    elif text == '💳 Quỹ Tiền mặt':
-        d = get_stats()['details']['Cash']
-        await update.message.reply_text(f"💵 TIỀN MẶT\n💰 Số dư: {format_money(d['hien_co'])}\n📥 Nạp: {format_money(d['nap'])}\n📤 Rút: {format_money(d['rut'])}")
-
-    elif text == '💾 Backup DB':
-        if os.path.exists(DB_FILE): await update.message.reply_document(document=open(DB_FILE, 'rb'), caption="File dữ liệu .db")
-
-    # HƯỚNG DẪN CHI TIẾT
+    # NÚT HƯỚNG DẪN CHI TIẾT
     elif text == '❓ Hướng dẫn':
         guide = (
-            "📘 **HƯỚNG DẪN SỬ DỤNG PORTFOLIO BOT**\n\n"
-            "1️⃣ **Cách nhập số tiền:**\n"
-            "- Bạn có thể gõ: `10tr`, `15.5m`, `1ty`, `500k` hoặc số trơn `20000000`.\n\n"
-            "2️⃣ **Quản lý tài sản:**\n"
-            "- Chọn **💵 Cập nhật Số dư** để nhập giá trị tài sản thực tế hiện tại (Bot dùng để tính lãi lỗ).\n\n"
-            "3️⃣ **Đặt mục tiêu thông minh:**\n"
-            "- Gõ `Hòa vốn`: Bot lấy tổng vốn nạp làm đích.\n"
-            "- Gõ `Lãi 20%`: Bot lấy Vốn + 20% làm đích.\n\n"
-            "4️⃣ **Hoàn tác (Undo):**\n"
-            "- Sau khi nạp/rút, nếu sai hãy nhấn nút **Hoàn tác** ngay bên dưới tin nhắn đó.\n\n"
-            "5️⃣ **Trợ lý AI:**\n"
-            "- Sử dụng để hỏi về xu hướng thị trường hoặc nhờ AI đưa ra lời khuyên cho danh mục."
+            "📘 **CẨM NANG SỬ DỤNG BOT**\n\n"
+            "1️⃣ **Nhập số tiền:** Gõ `10tr`, `50m`, `1.5ty` hoặc `500k`.\n"
+            "2️⃣ **Nạp/Rút:** Sau khi nhập, sẽ có nút **Hoàn tác** để xóa nếu nhầm.\n"
+            "3️⃣ **Số dư:** Dùng 'Cập nhật số dư' để nhập giá trị thực tế trên sàn.\n"
+            "4️⃣ **Mục tiêu:** Gõ 'Hòa vốn' hoặc 'Lãi 20%' để bot tự tính toán đích đến.\n"
+            "5️⃣ **AI:** Nhấn 'Trợ lý AI' để chat trực tiếp với chuyên gia tài chính."
         )
         await update.message.reply_text(guide, parse_mode='Markdown')
 
-    # Xử lý nhập liệu (Nạp/Rút, Mục tiêu, Balance)
+    elif text == '💳 Quỹ Tiền mặt':
+        d = get_stats()['details']['Cash']; await update.message.reply_text(f"💵 TIỀN MẶT\n💰 Số dư: {format_money(d['hien_co'])}\n📥 Nạp: {format_money(d['nap'])}\n📤 Rút: {format_money(d['rut'])}")
+    elif text == '💾 Backup DB':
+        if os.path.exists(DB_FILE): await update.message.reply_document(document=open(DB_FILE, 'rb'))
+
+    # Xử lý State nhập liệu (Undo, Target, Balance)
     elif text == '🎯 Đặt Mục tiêu':
-        context.user_data['state'] = 'awaiting_target'; await update.message.reply_text("🎯 Nhập mục tiêu (VD: Hòa vốn, Lãi 10%, 1.5 tỷ):")
+        context.user_data['state'] = 'awaiting_target'; await update.message.reply_text("🎯 Nhập đích đến (VD: Hòa vốn, Lãi 10%, 2 tỷ):")
 
     if state == 'awaiting_target':
         s = get_stats(); nt = None; text_l = text.lower()
@@ -254,43 +249,41 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else: nt = parse_amount(text)
         if nt:
             conn = sqlite3.connect(DB_FILE); conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('target_asset', ?)", (nt,)); conn.commit(); conn.close()
-            context.user_data.clear(); await update.message.reply_text(f"✅ Đã đặt mục tiêu: {format_money(nt)}", reply_markup=get_asset_menu())
+            context.user_data.clear(); await update.message.reply_text(f"✅ Mục tiêu mới: {format_money(nt)}", reply_markup=get_asset_menu())
 
     elif state in ['awaiting_nap', 'awaiting_rut']:
         amt = parse_amount(text)
         if amt:
-            cat = context.user_data.get('category'); t_type = 'Nạp' if state == 'awaiting_nap' else 'Rút'
+            cat, t_type = context.user_data.get('category'), ('Nạp' if state == 'awaiting_nap' else 'Rút')
             conn = sqlite3.connect(DB_FILE); c = conn.cursor()
             c.execute("INSERT INTO transactions (category, type, amount, date) VALUES (?, ?, ?, ?)", (cat, t_type, amt, datetime.datetime.now().strftime("%Y-%m-%d")))
-            tx_id = c.lastrowid; conn.commit(); conn.close()
-            context.user_data.clear()
+            tx_id = c.lastrowid; conn.commit(); conn.close(); context.user_data.clear()
             # NÚT UNDO CHO MỖI THAO TÁC
             kb = [[InlineKeyboardButton("↩️ Hoàn tác (Undo)", callback_data=f"undo_{tx_id}")]]
-            await update.message.reply_text(f"✅ Đã ghi nhận {t_type} {format_money(amt)} vào {cat}.", reply_markup=InlineKeyboardMarkup(kb))
+            await update.message.reply_text(f"✅ Đã ghi nhận {t_type} vào {cat}.", reply_markup=InlineKeyboardMarkup(kb))
 
     elif state and str(state).startswith('awaiting_balance_'):
         cat, amt = state.split("_")[2], parse_amount(text)
         if amt is not None:
             conn = sqlite3.connect(DB_FILE); conn.execute("INSERT OR REPLACE INTO assets (category, current_value) VALUES (?, ?)", (cat, amt)); conn.commit(); conn.close()
-            context.user_data.clear(); await update.message.reply_text(f"✅ Đã cập nhật {cat}.", reply_markup=get_asset_menu())
+            context.user_data.clear(); await update.message.reply_text(f"✅ Cập nhật {cat} xong.", reply_markup=get_asset_menu())
 
     elif text == '💵 Cập nhật Số dư':
-        await update.message.reply_text("Chọn tài sản:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪙 Crypto", callback_data="bal_Crypto"), InlineKeyboardButton("📈 Stock", callback_data="bal_Stock")], [InlineKeyboardButton("💵 Tiền mặt", callback_data="bal_Cash")]]))
+        await update.message.reply_text("Chọn mục:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪙 Crypto", callback_data="bal_Crypto"), InlineKeyboardButton("📈 Stock", callback_data="bal_Stock")], [InlineKeyboardButton("💵 Tiền mặt", callback_data="bal_Cash")]]))
     elif text in ['➕ Nạp tiền', '➖ Rút tiền']:
-        a = 'nap' if 'Nạp' in text else 'rut'; await update.message.reply_text("Chọn danh mục:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪙 Crypto", callback_data=f"cat_{action}_Crypto"), InlineKeyboardButton("📈 Stock", callback_data=f"cat_{action}_Stock")], [InlineKeyboardButton("💵 Tiền mặt", callback_data=f"cat_{action}_Cash")]]))
+        a = 'nap' if 'Nạp' in text else 'rut'; await update.message.reply_text("Chọn danh mục:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪙 Crypto", callback_data=f"cat_{a}_Crypto"), InlineKeyboardButton("📈 Stock", callback_data=f"cat_{a}_Stock")], [InlineKeyboardButton("💵 Tiền mặt", callback_data=f"cat_{a}_Cash")]]))
 
-# --- 6. CALLBACKS ---
+# --- 6. CALLBACKS & RESTORE ---
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query; await q.answer(); d = q.data
-    # XỬ LÝ NÚT UNDO
     if d.startswith("undo_"):
         tx_id = d.split("_")[1]
         conn = sqlite3.connect(DB_FILE); conn.execute("DELETE FROM transactions WHERE id = ?", (tx_id,)); conn.commit(); conn.close()
-        await q.edit_message_text("✅ Đã hoàn tác (xóa) giao dịch thành công!")
+        await q.edit_message_text("✅ Đã hoàn tác thành công!")
     elif d.startswith("hist_"):
         p = d.split("_"); tx_id, bd = p[1], p[2]
         kb = [[InlineKeyboardButton("✏️ Sửa", callback_data=f"edit_{tx_id}_{bd}"), InlineKeyboardButton("❌ Xóa", callback_data=f"del_{tx_id}_{bd}")], [InlineKeyboardButton("⬅️ Quay lại", callback_data=f"back_view_{bd}")]]
-        await q.edit_message_text("Thao tác với giao dịch này:", reply_markup=InlineKeyboardMarkup(kb))
+        await q.edit_message_text("Thao tác:", reply_markup=InlineKeyboardMarkup(kb))
     elif d.startswith("edit_"):
         p = d.split("_"); context.user_data['state'] = f"awaiting_edit_{p[1]}_{p[2]}"; await q.edit_message_text("📝 Nhập số tiền mới:")
     elif d.startswith("del_"):
@@ -303,7 +296,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif d.startswith("bal_"):
         context.user_data['state'] = f"awaiting_balance_{d.split('_')[1]}"; await q.edit_message_text(f"Nhập số dư {d.split('_')[1]}:")
     elif d.startswith("cat_"):
-        p = d.split("_"); action = p[1]; context.user_data['state'], context.user_data['category'] = f"awaiting_{action}", p[2]; await q.edit_message_text(f"Nhập tiền {action} cho {p[2]}:")
+        p = d.split("_"); context.user_data['state'], context.user_data['category'] = f"awaiting_{p[1]}", p[2]; await q.edit_message_text(f"Nhập tiền {p[1]} cho {p[2]}:")
 
 async def handle_doc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.document.file_name == DB_FILE:
