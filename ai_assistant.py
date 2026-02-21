@@ -8,57 +8,14 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 class PortfolioAI:
     def __init__(self):
         self.api_key = GEMINI_KEY
-        self.model_name = None # Sẽ tự động tìm
-
-    def get_valid_model(self):
-        if self.model_name:
-            return self.model_name
-            
-        try:
-            # 1. Gọi Google để lấy danh sách model mà API Key này được phép dùng
-            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            models = response.json().get('models', [])
-            
-            # Lọc ra các model hỗ trợ sinh văn bản
-            valid_models = [m['name'] for m in models if 'generateContent' in m.get('supportedGenerationMethods', [])]
-            
-            # 2. Tìm model phù hợp nhất
-            target = None
-            # Ưu tiên số 1: Gemini 1.5 Flash mới nhất
-            for m in valid_models:
-                if 'gemini-1.5-flash' in m:
-                    target = m
-                    break
-            
-            # Nếu không có Flash, tìm bản Pro hoặc bản cũ
-            if not target:
-                for m in valid_models:
-                    if 'gemini-1.5-pro' in m or 'gemini-pro' in m:
-                        target = m
-                        break
-            
-            if target:
-                self.model_name = target
-                print(f"✅ Đã dò thành công model: {target}")
-                return target
-            else:
-                return None
-        except Exception as e:
-            print("❌ Lỗi khi quét danh sách model:", e)
-            # Fallback nếu việc quét thất bại
-            return "models/gemini-1.5-flash-latest"
+        # KHÓA CHẶT VÀO BẢN MIỄN PHÍ: gemini-1.5-flash và cổng v1beta
+        # Cổng v1beta chống lỗi 404. Model 1.5-flash chống lỗi 429 (0 quota).
+        self.url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.api_key}"
 
     async def get_advice(self, user_query, s):
         if not self.api_key:
             return "⚠️ Chưa cấu hình GEMINI_API_KEY trên Railway."
         
-        # Tự động lấy cái tên model chuẩn xác nhất của Google
-        model_to_use = self.get_valid_model()
-        if not model_to_use:
-            return "❌ API Key của bạn không có quyền truy cập vào các model ngôn ngữ của Gemini."
-
         prompt_text = (
             f"Bạn là chuyên gia tư vấn tài chính. Dữ liệu của tôi:\n"
             f"- Tổng tài sản: {int(s.get('total_val', 0)):,} VNĐ\n"
@@ -69,9 +26,6 @@ class PortfolioAI:
             f"Yêu cầu: Trả lời ngắn gọn, thông minh bằng văn bản thuần túy, TUYỆT ĐỐI KHÔNG dùng ký tự Markdown (*, #)."
         )
 
-        # Cổng v1beta linh hoạt nhất, kết hợp với tên model vừa quét được
-        url = f"https://generativelanguage.googleapis.com/v1beta/{model_to_use}:generateContent?key={self.api_key}"
-        
         payload = {
             "contents": [{"parts": [{"text": prompt_text}]}],
             "generationConfig": {"temperature": 0.7}
@@ -80,18 +34,25 @@ class PortfolioAI:
 
         def fetch_google_api():
             try:
-                response = requests.post(url, headers=headers, json=payload, timeout=15)
+                response = requests.post(self.url, headers=headers, json=payload, timeout=15)
                 response.raise_for_status() 
                 return response.json()['candidates'][0]['content']['parts'][0]['text']
             except requests.exceptions.HTTPError as err:
-                return f"❌ Google từ chối model ({model_to_use}): Mã lỗi {err.response.status_code}\nChi tiết: {err.response.text}"
+                return f"❌ Lỗi từ Google (Mã {err.response.status_code}):\n{err.response.text}"
             except Exception as e:
                 return f"❌ Lỗi đường truyền: {str(e)}"
 
         try:
-            ai_reply = await asyncio.to_thread(fetch_google_api)
+            # Chạy trong luồng phụ, giới hạn 15 giây chống treo bot
+            ai_reply = await asyncio.wait_for(
+                asyncio.to_thread(fetch_google_api), 
+                timeout=15.0
+            )
             return ai_reply
+        except asyncio.TimeoutError:
+            return "⏳ Máy chủ AI Google đang quá tải. Bạn hãy thử lại sau nhé!"
         except Exception as e:
             return f"❌ Lỗi xử lý luồng AI: {str(e)}"
 
+# Khởi tạo instance
 portfolio_ai = PortfolioAI()
