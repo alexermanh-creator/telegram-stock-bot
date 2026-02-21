@@ -10,21 +10,10 @@ class PortfolioAI:
         if GEMINI_KEY:
             try:
                 genai.configure(api_key=GEMINI_KEY)
-                # Tự động quét model, ưu tiên gemini-1.5-flash, nếu không có thì dùng gemini-pro
-                models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                target_model = 'models/gemini-pro' # Dự phòng mặc định
-                
-                for m in models:
-                    if '1.5-flash' in m:
-                        target_model = m
-                        break
-                        
-                # Bỏ tiền tố 'models/' để khớp SDK mới
-                target_model = target_model.replace('models/', '')
-                self.model = genai.GenerativeModel(target_model)
-                print(f"✅ Đã kết nối AI với model: {target_model}")
+                # Chỉ dùng duy nhất model chuẩn mới nhất. TUYỆT ĐỐI không lùi về gemini-pro.
+                self.model = genai.GenerativeModel('gemini-1.5-flash')
             except Exception as e:
-                print(f"❌ Lỗi khởi tạo AI: {e}")
+                print(f"Lỗi khởi tạo AI: {e}")
 
     async def get_advice(self, user_query, s):
         if not self.model:
@@ -49,6 +38,7 @@ class PortfolioAI:
         except asyncio.TimeoutError:
             return "⏳ Máy chủ AI Google đang quá tải (chờ quá 15s). Bạn hãy thử lại sau nhé!"
         except Exception as e:
-            return f"❌ Lỗi kết nối Google AI: {str(e)}"
+            # Nếu vẫn báo lỗi, bot sẽ gợi ý bạn đổi API Key mới
+            return f"❌ Lỗi từ Google AI: {str(e)}\n\n👉 Gợi ý: API Key của bạn có thể đã cũ hoặc bị khóa. Hãy vào Google AI Studio tạo 1 Key mới và cập nhật lại nhé!"
 
 portfolio_ai = PortfolioAI()
