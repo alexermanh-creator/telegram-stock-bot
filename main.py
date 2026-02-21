@@ -104,25 +104,34 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in ['/start', '🏠 Menu Chính']:
         context.user_data.clear(); await update.message.reply_text("🏠 DASHBOARD CHÍNH", reply_markup=get_main_menu()); return
 
+    # --- TÍNH NĂNG MỚI: NÚT XÓA TRÍ NHỚ TÍCH HỢP ---
+    elif text in ['/xoa_tri_nho', '🧹 Xóa trí nhớ AI']:
+        portfolio_ai.chat_history = []
+        await update.message.reply_text("🧹 Đã xóa sạch trí nhớ của AI! Bộ não đã được làm trống. Hãy bắt đầu một chủ đề phân tích mới nhé.")
+        return
+
     if text == '🏦 Quản lý Tài sản': await update.message.reply_text("🏦 QUẢN LÝ TÀI SẢN", reply_markup=get_asset_menu())
     elif text == '📊 Thống kê': await update.message.reply_text("📊 THỐNG KÊ", reply_markup=get_stats_menu())
     elif text == '⚙️ Hệ thống': await update.message.reply_text("⚙️ HỆ THỐNG", reply_markup=get_sys_menu())
     elif text == '💸 Giao dịch': await update.message.reply_text("💸 GIAO DỊCH", reply_markup=ReplyKeyboardMarkup([['➕ Nạp tiền', '➖ Rút tiền'], ['🏠 Menu Chính']], resize_keyboard=True))
 
-    # --- KÍCH HOẠT TRỢ LÝ AI ---
     elif text == '🤖 Trợ lý AI':
         context.user_data['state'] = 'chatting_ai'
-        await update.message.reply_text("🤖 **AI đã sẵn sàng!**\nHãy gõ câu hỏi của bạn (Ví dụ: 'Phân tích danh mục'):")
+        # Mở menu riêng dành cho AI với nút bấm cực tiện lợi
+        ai_menu = ReplyKeyboardMarkup([['🧹 Xóa trí nhớ AI', '🏠 Menu Chính']], resize_keyboard=True)
+        await update.message.reply_text(
+            "🤖 **AI đã sẵn sàng!**\nHãy gõ câu hỏi của bạn.\n"
+            "*(Bấm nút [🧹 Xóa trí nhớ AI] ở dưới cùng để AI quên cuộc hội thoại cũ)*", 
+            reply_markup=ai_menu, parse_mode='Markdown'
+        )
         return
 
-    # --- XỬ LÝ TRẢ LỜI CỦA AI ---
     elif state == 'chatting_ai':
         s = get_stats()
         loading = await update.message.reply_text("⌛ AI đang phân tích dữ liệu...")
         try:
             reply = await portfolio_ai.get_advice(text, s)
             await loading.delete()
-            # BỎ parse_mode="Markdown" ĐỂ TRÁNH LỖI TELEGRAM CHẶN TIN NHẮN
             await update.message.reply_text(reply)
         except Exception as e:
             await loading.delete()
@@ -209,7 +218,8 @@ def main():
     init_db(); token = os.environ.get("BOT_TOKEN")
     if not token: logging.error("Lỗi: Không tìm thấy BOT_TOKEN"); return
     app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("start", handle_text))
+    
+    app.add_handler(CommandHandler(["start", "xoa_tri_nho"], handle_text))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_doc))
     app.add_handler(CallbackQueryHandler(handle_callback))
