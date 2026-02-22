@@ -12,9 +12,9 @@ class ReportExporter:
             if not os.path.exists(DB_FILE): return None
             conn = sqlite3.connect(DB_FILE)
             
-            # Đọc dữ liệu từ DB
+            # Đọc dữ liệu từ DB (NÂNG CẤP: lấy thêm cột note)
             df_assets = pd.read_sql_query("SELECT category, current_value FROM assets", conn)
-            df_tx = pd.read_sql_query("SELECT category, type, amount, date FROM transactions", conn)
+            df_tx = pd.read_sql_query("SELECT category, type, amount, date, note FROM transactions", conn)
             target_val = (conn.execute("SELECT value FROM settings WHERE key='target_asset'").fetchone() or [500000000])[0]
             conn.close()
 
@@ -41,31 +41,40 @@ class ReportExporter:
             output = io.BytesIO()
 
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                # Sheet Dashboard
                 df_s.to_excel(writer, sheet_name='Dashboard', index=False, startrow=4)
-                df_tx.sort_values('date', ascending=False).to_excel(writer, sheet_name='Giao_Dich_Chi_Tiet', index=False)
+                
+                # Sheet Giao dịch chi tiết (NÂNG CẤP: thêm cột Ghi chú)
+                df_tx_export = df_tx.sort_values('date', ascending=False).copy()
+                df_tx_export.columns = ['Danh mục', 'Loại', 'Số tiền', 'Ngày', 'Ghi chú']
+                df_tx_export.to_excel(writer, sheet_name='Giao_Dich_Chi_Tiet', index=False)
 
                 workbook = writer.book
                 ws = writer.sheets['Dashboard']
+                ws_tx = writer.sheets['Giao_Dich_Chi_Tiet']
 
-                # Định dạng chuyên nghiệp
+                # Định dạng
                 title_fmt = workbook.add_format({'bold': True, 'font_size': 18, 'font_color': '#1F4E78'})
                 header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center'})
                 num_fmt = workbook.add_format({'num_format': '#,##0', 'border': 1})
-                pct_fmt = workbook.add_format({'num_format': '0.0"%"', 'border': 1})
                 red_fmt = workbook.add_format({'font_color': '#9C0006', 'bg_color': '#FFC7CE', 'num_format': '#,##0', 'border': 1})
                 green_fmt = workbook.add_format({'font_color': '#006100', 'bg_color': '#C6EFCE', 'num_format': '#,##0', 'border': 1})
 
-                # Header báo cáo
+                # Cấu hình sheet Dashboard
                 ws.write('A1', 'HỆ THỐNG QUẢN TRỊ GIA SẢN CÁ NHÂN', title_fmt)
                 ws.write('A2', f'Dữ liệu tính đến: {datetime.datetime.now().strftime("%d/%m/%Y %H:%M")}')
                 ws.write('A3', f'Mục tiêu tài chính: {int(target_val):,} VNĐ')
-
-                # Áp dụng format màu cho Lãi/Lỗ
                 ws.conditional_format('D6:D8', {'type': 'cell', 'criteria': '>=', 'value': 0, 'format': green_fmt})
                 ws.conditional_format('D6:D8', {'type': 'cell', 'criteria': '<', 'value': 0, 'format': red_fmt})
                 ws.set_column('A:E', 18, num_fmt)
 
-                # --- VẼ BIỂU ĐỒ 1: PHÂN BỔ TÀI SẢN (PIE) ---
+                # Cấu hình sheet Giao dịch (NÂNG CẤP: dãn cột ghi chú)
+                ws_tx.set_column('A:B', 15)
+                ws_tx.set_column('C:C', 20, num_fmt)
+                ws_tx.set_column('D:D', 15)
+                ws_tx.set_column('E:E', 40) # Cột ghi chú rộng ra
+
+                # --- VẼ BIỂU ĐỒ PIE ---
                 chart1 = workbook.add_chart({'type': 'pie'})
                 chart1.add_series({
                     'name': 'Tỷ trọng tài sản',
@@ -76,7 +85,7 @@ class ReportExporter:
                 chart1.set_title({'name': 'Cơ cấu Danh mục Hiện tại'})
                 ws.insert_chart('G2', chart1)
 
-                # --- VẼ BIỂU ĐỒ 2: HIỆU SUẤT LÃI LỖ (COLUMN) ---
+                # --- VẼ BIỂU ĐỒ LÃI LỖ ---
                 chart2 = workbook.add_chart({'type': 'column'})
                 chart2.add_series({
                     'name': 'Mức sinh lời (VNĐ)',
