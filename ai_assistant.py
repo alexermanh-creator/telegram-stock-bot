@@ -23,30 +23,19 @@ class PortfolioAI:
             return self.model_url
         except: return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.api_key}"
 
-    async def get_advice(self, user_query, s):
-        if not self.api_key: return "⚠️ thiếu api key trên railway."
+    async def get_advice(self, user_query, full_asset_data):
+        if not self.api_key: return "lỗi: thiếu gemini_api_key trong biến môi trường."
         url = self.get_dynamic_model_url()
         
-        # Tinh gọn prompt tối đa để chống lỗi 429
-        cur_t = datetime.datetime.now().strftime("%d/%m/%Y")
-        
-        # Tính toán nhanh tỷ trọng để AI dễ bề phân tích
-        tv = s.get('total_val', 0)
-        c_p = (s.get('details', {}).get('Crypto', {}).get('hien_co', 0) / tv * 100) if tv > 0 else 0
-        s_p = (s.get('details', {}).get('Stock', {}).get('hien_co', 0) / tv * 100) if tv > 0 else 0
-        m_p = (s.get('details', {}).get('Cash', {}).get('hien_co', 0) / tv * 100) if tv > 0 else 0
-
+        # NÂNG CẤP: Đưa dữ liệu chi tiết bảng tài sản vào hệ thống
         system_context = (
-            f"vai trò: wealth manager (vn). ngày: {cur_t}.\n"
-            f"danh mục: tổng {int(tv):,}đ, lãi/lỗ {s.get('total_lai_pct', 0):.2f}%.\n"
-            f"tỷ trọng: crypto {c_p:.1f}%, stock {s_p:.1f}%, tiền mặt {m_p:.1f}%.\n"
-            f"mục tiêu: {int(s.get('target_asset', 0)):,}đ (đạt {s.get('progress', 0):.1f}%).\n\n"
-            f"nhiệm vụ: tư vấn tối ưu tương lai. tập trung vào tái cơ cấu tỷ trọng để giảm rủi ro và đạt mục tiêu nhanh nhất. "
-            f"phản hồi ngắn, gắt, kỷ luật, không markdown đặc biệt.\n"
-            f"câu hỏi: {user_query}"
+            f"Bối cảnh tài chính người dùng:\n{full_asset_data}\n\n"
+            f"Vai trò: Bạn là một CFO gắt gao, kỷ luật. Hãy soi kỹ bảng tài sản trên.\n"
+            f"Nhiệm vụ: Phân tích tỷ trọng, lãi lỗ từng nhóm. Cảnh báo nếu nạp nhiều mà lỗ sâu hoặc tiền mặt quá ít.\n"
+            f"Phản hồi: Ngắn, gắt, dựa trực tiếp trên con số. Không nói lý thuyết suông.\n"
+            f"Câu hỏi: {user_query}"
         )
 
-        # Trí nhớ hội thoại rút gọn (giữ 4 tin nhắn gần nhất để siêu tiết kiệm)
         if len(self.chat_history) > 4: self.chat_history = self.chat_history[-4:]
         api_contents = self.chat_history.copy()
         api_contents.append({"role": "user", "parts": [{"text": system_context}]})
@@ -65,7 +54,6 @@ class PortfolioAI:
 
         ai_reply = await asyncio.to_thread(fetch_google_api)
         if not ai_reply.startswith("lỗi"):
-            # Lưu trí nhớ dạng rút gọn
             self.chat_history.append({"role": "user", "parts": [{"text": user_query}]})
             self.chat_history.append({"role": "model", "parts": [{"text": ai_reply}]})
         return ai_reply
