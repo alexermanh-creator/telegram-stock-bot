@@ -34,7 +34,6 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS assets (category TEXT PRIMARY KEY, current_value REAL)''')
-    # NÂNG CẤP: Thêm cột note vào bảng giao dịch
     c.execute('''CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         category TEXT, 
@@ -55,7 +54,9 @@ def init_db():
     c.execute("SELECT COUNT(*) FROM transactions")
     if c.fetchone()[0] == 0 and INITIAL_TRANSACTIONS:
         c.executemany("INSERT INTO assets (category, current_value) VALUES (?, ?)", INITIAL_ASSETS)
-        c.executemany("INSERT INTO transactions (category, type, amount, date) VALUES (?, ?, ?, ?)", INITIAL_TRANSACTIONS)
+        # SỬA LỖI: Thêm giá trị rỗng cho cột note để khớp 5 cột dữ liệu mẫu
+        processed_tx = [(*t, "") for t in INITIAL_TRANSACTIONS]
+        c.executemany("INSERT INTO transactions (category, type, amount, date, note) VALUES (?, ?, ?, ?, ?)", processed_tx)
     conn.commit()
     conn.close()
 
@@ -156,22 +157,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == '🤖 Trợ lý AI':
         context.user_data['state'] = 'chatting_ai'
         ai_menu = ReplyKeyboardMarkup([['🧹 Xóa trí nhớ AI', '🏠 Menu Chính']], resize_keyboard=True)
-        await update.message.reply_text("🤖 AI đã sẵn sàng! Hãy gõ câu hỏi.", reply_markup=ai_menu)
+        await update.message.reply_text("🤖 AI đã sẵn sàng! Hãy gõ câu hỏi để tôi soi bảng tài sản.", reply_markup=ai_menu)
         return
 
     elif state == 'chatting_ai':
         s = get_stats(); d = s['details']
-        loading = await update.message.reply_text("⌛ AI đang phân tích toàn bộ tài sản...")
+        loading = await update.message.reply_text("⌛ AI đang phân tích tài sản thực tế...")
         
-        # NÂNG CẤP: Xây dựng bối cảnh chi tiết cho AI
         full_context = (
-            f"BÁO CÁO CHI TIẾT:\n"
-            f"- Tổng NAV: {format_money(s['total_val'])}đ | Lãi: {s['total_lai_pct']:.2f}%\n"
-            f"- Vốn nạp: {format_money(s['total_nap'])} | Rút: {format_money(s['total_rut'])}\n"
-            f"- Mục tiêu: {s['progress']:.1f}% đến {format_money(s['target_asset'])}\n"
-            f"- Crypto: Có {format_money(d['Crypto']['hien_co'])}, Vốn {format_money(d['Crypto']['von'])}, Lãi {d['Crypto']['pct']:.1f}%\n"
-            f"- Stock: Có {format_money(d['Stock']['hien_co'])}, Vốn {format_money(d['Stock']['von'])}, Lãi {d['Stock']['pct']:.1f}%\n"
-            f"- Tiền mặt: {format_money(d['Cash']['hien_co'])}đ"
+            f"BÁO CÁO TÀI SẢN CHI TIẾT:\n"
+            f"- Tổng NAV hiện có: {format_money(s['total_val'])}đ\n"
+            f"- Hiệu suất: {s['total_lai_pct']:.2f}% (Lãi: {format_money(s['total_lai'])}đ)\n"
+            f"- Vốn nạp ròng: {format_money(s['total_von'])}đ\n"
+            f"- Mục tiêu: {s['progress']:.1f}% đến mốc {format_money(s['target_asset'])}\n\n"
+            f"DANH MỤC:\n"
+            f"1. 🟡 CRYPTO: Hiện có {format_money(d['Crypto']['hien_co'])}, Vốn {format_money(d['Crypto']['von'])}, Lãi {d['Crypto']['pct']:.1f}%\n"
+            f"2. 📈 STOCK: Hiện có {format_money(d['Stock']['hien_co'])}, Vốn {format_money(d['Stock']['von'])}, Lãi {d['Stock']['pct']:.1f}%\n"
+            f"3. 💵 TIỀN MẶT: {format_money(d['Cash']['hien_co'])}đ"
         )
         try:
             reply = await portfolio_ai.get_advice(text, full_context)
@@ -182,7 +184,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == '💰 Xem Tổng Tài sản':
         s = get_stats(); d = s['details']
-        msg = (f"🏆 *TỔNG TÀI SẢN*\n`{format_money(s['total_val'])}` VNĐ\n{'📈' if s['total_lai']>=0 else '📉'} {format_money(s['total_lai'])} ({s['total_lai_pct']:.1f}%)\n"
+        msg = (f"🏆 *TỔNG TÀI SẢN*\n`{format_money(s['total_val'])}` VNĐ\n"
+               f"{'📈' if s['total_lai']>=0 else '📉'} {format_money(s['total_lai'])} ({s['total_lai_pct']:.1f}%)\n"
                f"🎯 Mục tiêu: {s['progress']:.1f}% (`{format_money(s['total_val'])} / {format_money(s['target_asset'])}`)\n"
                f"----------------------------------\n"
                f"🟡 *CRYPTO*: {format_money(d['Crypto']['hien_co'])} (Lãi {d['Crypto']['pct']:.1f}%)\n"
@@ -211,22 +214,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text in ['➕ Nạp tiền', '➖ Rút tiền']: a = 'nap' if 'Nạp' in text else 'rut'; await update.message.reply_text("Chọn danh mục:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🪙 Crypto", callback_data=f"cat_{a}_Crypto"), InlineKeyboardButton("📈 Stock", callback_data=f"cat_{a}_Stock")], [InlineKeyboardButton("💵 Tiền mặt", callback_data=f"cat_{a}_Cash")]]))
     elif text == '💳 Quỹ Tiền mặt': d = get_stats()['details']['Cash']; await update.message.reply_text(f"💵 TIỀN MẶT: {format_money(d['hien_co'])}")
     
-    elif text == '🎯 Đặt Mục tiêu': context.user_data['state'] = 'awaiting_target'; await update.message.reply_text("🎯 Nhập mục tiêu (số tiền hoặc % lãi):")
+    elif text == '🎯 Đặt Mục tiêu': context.user_data['state'] = 'awaiting_target'; await update.message.reply_text("🎯 Nhập mục tiêu (số tiền VNĐ):")
     elif state == 'awaiting_target':
-        s = get_stats(); nt = parse_amount(text)
+        nt = parse_amount(text)
         if nt: 
             conn = sqlite3.connect(DB_FILE); conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('target_asset', ?)", (nt,)); conn.commit(); conn.close()
             await update.message.reply_text(f"✅ Đã đặt mục tiêu: {format_money(nt)}", reply_markup=get_asset_menu())
         context.user_data.clear()
 
-    # NÂNG CẤP: Quy trình Nạp/Rút + Ghi chú
+    # NÂNG CẤP: Quy trình Nhập tiền -> Hỏi Ghi chú
     elif state in ['awaiting_nap', 'awaiting_rut']:
         amt = parse_amount(text)
         if amt:
             context.user_data['temp_amt'] = amt
             context.user_data['prev_state'] = state
             context.user_data['state'] = 'awaiting_note'
-            await update.message.reply_text("📝 Nhập ghi chú (gõ '.' để bỏ qua):")
+            await update.message.reply_text("📝 Nhập ghi chú mục đích (Gõ '.' để bỏ qua):")
         return
 
     elif state == 'awaiting_note':
@@ -246,7 +249,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif state and state.startswith('awaiting_balance_'):
         cat, amt = state.split("_")[2], parse_amount(text)
         if amt is not None:
-            conn = sqlite3.connect(DB_FILE); conn.execute("INSERT OR REPLACE INTO assets (category, current_value) VALUES (?, ?)", (cat, amt)); conn.commit(); conn.close()
+            conn = sqlite3.connect(DB_FILE); conn.execute("INSERT OR REPLACE INTO assets (category, current_value) VALUES ('Cash', ?)", (amt,)); conn.commit(); conn.close()
             await update.message.reply_text(f"✅ Cập nhật {cat} xong.", reply_markup=get_asset_menu())
         context.user_data.clear()
 
@@ -258,7 +261,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif d.startswith("hist_"):
         p = d.split("_"); tx_id, bd = p[1], p[2]
         kb = [[InlineKeyboardButton("❌ Xóa", callback_data=f"del_{tx_id}_{bd}"), InlineKeyboardButton("⬅️ Quay lại", callback_data=f"back_view_{bd}")]]; 
-        await q.edit_message_text("Chọn thao tác:", reply_markup=InlineKeyboardMarkup(kb))
+        await q.edit_message_text("Thao tác:", reply_markup=InlineKeyboardMarkup(kb))
     elif d.startswith("del_"):
         p = d.split("_"); conn = sqlite3.connect(DB_FILE); conn.execute("DELETE FROM transactions WHERE id = ?", (p[1],)); conn.commit(); conn.close()
         m, mk = get_history_menu(None if p[2] == "recent" else int(p[2]))
@@ -268,7 +271,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif d.startswith("bal_"): context.user_data['state'] = f"awaiting_balance_{d.split('_')[1]}"; await q.edit_message_text(f"Nhập số dư {d.split('_')[1]}:")
     elif d.startswith("cat_"): 
         p = d.split("_"); context.user_data['state'], context.user_data['category'] = f"awaiting_{p[1]}", p[2]
-        await q.edit_message_text(f"Nhập tiền {p[1]} cho {p[2]}:")
+        await q.edit_message_text(f"Nhập số tiền {p[1]} cho {p[2]}:")
 
 async def handle_doc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.document.file_name == DB_FILE:
