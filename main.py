@@ -154,15 +154,31 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif state == 'chatting_ai':
+        # 1. Thu thập dữ liệu ổn định từ hàm get_stats() của bạn
         s = get_stats()
-        loading = await update.message.reply_text("⌛ AI đang phân tích dữ liệu...")
+        d = s['details']
+        loading = await update.message.reply_text("⌛ AI đang soi chi tiết bảng tài sản của bạn...")
+        
+        # 2. Xây dựng văn bản dữ liệu chi tiết (Context)
+        full_context = (
+            f"DỮ LIỆU BẢNG TÀI SẢN:\n"
+            f"- Tổng tài sản: {format_money(s['total_val'])}đ\n"
+            f"- Lãi/Lỗ tổng: {format_money(s['total_lai'])} ({s['total_lai_pct']:.2f}%)\n"
+            f"- Vốn nạp: {format_money(s['total_nap'])} | Rút: {format_money(s['total_rut'])}\n"
+            f"- Mục tiêu: {s['progress']:.1f}% đến {format_money(s['target_asset'])}đ\n"
+            f"- Crypto: Có {format_money(d['Crypto']['hien_co'])}đ, Vốn {format_money(d['Crypto']['von'])}đ, Lãi {d['Crypto']['pct']:.1f}%\n"
+            f"- Stock: Có {format_money(d['Stock']['hien_co'])}đ, Vốn {format_money(d['Stock']['von'])}đ, Lãi {d['Stock']['pct']:.1f}%\n"
+            f"- Tiền mặt: {format_money(d['Cash']['hien_co'])}đ\n"
+        )
+        
         try:
-            reply = await portfolio_ai.get_advice(text, s)
+            # 3. Gửi sang AI (Truyền full_context thay vì chỉ biến s)
+            reply = await portfolio_ai.get_advice(text, full_context)
             await loading.delete()
             await update.message.reply_text(reply)
         except Exception as e:
             await loading.delete()
-            await update.message.reply_text(f"❌ Có lỗi khi gửi tin nhắn Telegram: {e}")
+            await update.message.reply_text(f"❌ Lỗi AI: {e}")
         return
 
     elif text == '💰 Xem Tổng Tài sản':
@@ -253,3 +269,4 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__': main()
+
