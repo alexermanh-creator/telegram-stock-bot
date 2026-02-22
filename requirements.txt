@@ -1,7 +1,6 @@
+requests
 python-telegram-bot
 matplotlib
 pandas
-requests
 openpyxl
 xlsxwriter
-google-generativeai
