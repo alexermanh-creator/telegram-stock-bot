@@ -14,7 +14,7 @@ class ReportExporter:
             
             # Đọc dữ liệu từ DB
             df_assets = pd.read_sql_query("SELECT category, current_value FROM assets", conn)
-            df_tx = pd.read_sql_query("SELECT category, type, amount, date FROM transactions", conn)
+            df_tx = pd.read_sql_query("SELECT category, type, amount, date, note FROM transactions", conn)
             target_val = (conn.execute("SELECT value FROM settings WHERE key='target_asset'").fetchone() or [500000000])[0]
             conn.close()
 
@@ -42,10 +42,21 @@ class ReportExporter:
 
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_s.to_excel(writer, sheet_name='Dashboard', index=False, startrow=4)
-                df_tx.sort_values('date', ascending=False).to_excel(writer, sheet_name='Giao_Dich_Chi_Tiet', index=False)
+                
+                # Đổi tên cột có thêm Ghi chú và xuất ra Excel
+                df_tx_export = df_tx.sort_values('date', ascending=False).copy()
+                df_tx_export.columns = ['Danh mục', 'Loại', 'Số tiền', 'Ngày', 'Ghi chú']
+                df_tx_export.to_excel(writer, sheet_name='Giao_Dich_Chi_Tiet', index=False)
 
                 workbook = writer.book
                 ws = writer.sheets['Dashboard']
+                
+                # Căn rộng cột Ghi chú (Cột E) ra để dễ đọc
+                ws_tx = writer.sheets['Giao_Dich_Chi_Tiet']
+                ws_tx.set_column('A:B', 15)
+                ws_tx.set_column('C:C', 18)
+                ws_tx.set_column('D:D', 15)
+                ws_tx.set_column('E:E', 40)
 
                 # Định dạng chuyên nghiệp
                 title_fmt = workbook.add_format({'bold': True, 'font_size': 18, 'font_color': '#1F4E78'})
@@ -94,3 +105,4 @@ class ReportExporter:
             return None
 
 reporter = ReportExporter()
+
