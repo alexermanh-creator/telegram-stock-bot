@@ -80,9 +80,9 @@ def get_asset_menu(): return ReplyKeyboardMarkup([['💰 Xem Tổng Tài sản',
 def get_stats_menu(): return ReplyKeyboardMarkup([['📜 Lịch sử', '🥧 Phân bổ', '📈 Biểu đồ'], ['🏠 Menu Chính']], resize_keyboard=True)
 def get_sys_menu(): 
     return ReplyKeyboardMarkup([
-        ['💾 Backup DB', '♻️ Restore DB'], # Hàng 1
-        ['📊 Xuất Excel', '❓ Hướng dẫn'], # Hàng 2
-        ['🏠 Menu Chính']                 # Hàng 3
+        ['💾 Backup DB', '♻️ Restore DB'],
+        ['📊 Xuất Excel', '❓ Hướng dẫn'],
+        ['🏠 Menu Chính']
     ], resize_keyboard=True)
 
 def get_history_menu(page=None):
@@ -110,7 +110,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in ['/start', '🏠 Menu Chính']:
         context.user_data.clear(); await update.message.reply_text("🏠 DASHBOARD CHÍNH", reply_markup=get_main_menu()); return
 
-    # --- TÍNH NĂNG MỚI: NÚT XÓA TRÍ NHỚ TÍCH HỢP ---
     elif text in ['/xoa_tri_nho', '🧹 Xóa trí nhớ AI']:
         portfolio_ai.chat_history = []
         await update.message.reply_text("🧹 Đã xóa sạch trí nhớ của AI! Bộ não đã được làm trống. Hãy bắt đầu một chủ đề phân tích mới nhé.")
@@ -118,8 +117,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == '🏦 Quản lý Tài sản': await update.message.reply_text("🏦 QUẢN LÝ TÀI SẢN", reply_markup=get_asset_menu())
     elif text == '📊 Thống kê': await update.message.reply_text("📊 THỐNG KÊ", reply_markup=get_stats_menu())
-    elif text == '⚙️ Hệ thống':
-        await update.message.reply_text("⚙️ HỆ THỐNG", reply_markup=get_sys_menu())
+    elif text == '⚙️ Hệ thống': await update.message.reply_text("⚙️ HỆ THỐNG", reply_markup=get_sys_menu())
 
     elif text == '💾 Backup DB':
         if os.path.exists(DB_FILE):
@@ -132,7 +130,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == '📊 Xuất Excel':
         loading = await update.message.reply_text("⌛ Đang trích xuất dữ liệu và vẽ biểu đồ...")
-        # Gọi module exporter
         excel_file = reporter.export_excel_report()
         if excel_file:
             await loading.delete()
@@ -140,11 +137,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await loading.delete()
             await update.message.reply_text("❌ Lỗi: Không thể tạo báo cáo. Có thể Database đang trống.")
+            
     elif text == '💸 Giao dịch': await update.message.reply_text("💸 GIAO DỊCH", reply_markup=ReplyKeyboardMarkup([['➕ Nạp tiền', '➖ Rút tiền'], ['🏠 Menu Chính']], resize_keyboard=True))
 
     elif text == '🤖 Trợ lý AI':
         context.user_data['state'] = 'chatting_ai'
-        # Mở menu riêng dành cho AI với nút bấm cực tiện lợi
         ai_menu = ReplyKeyboardMarkup([['🧹 Xóa trí nhớ AI', '🏠 Menu Chính']], resize_keyboard=True)
         await update.message.reply_text(
             "🤖 **AI đã sẵn sàng!**\nHãy gõ câu hỏi của bạn.\n"
@@ -156,9 +153,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif state == 'chatting_ai':
         s = get_stats()
         d = s['details']
-        loading = await update.message.reply_text("⌛ AI đang phân tích toàn bộ bảng tài sản...")
+        loading = await update.message.reply_text("⌛ AI đang phân tích dữ liệu chi tiết...")
         
-        # 1. Bóc tách dữ liệu chi tiết thành văn bản để AI dễ "soi"
+        # Đóng gói dữ liệu bảng tài sản chi tiết cho AI
         full_asset_context = (
             f"--- BÁO CÁO TÀI SẢN CHI TIẾT ---\n"
             f"🏆 TỔNG TÀI SẢN: {format_money(s['total_val'])} VNĐ\n"
@@ -166,14 +163,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📤 Tổng vốn nạp: {format_money(s['total_nap'])} | 📥 Tổng rút: {format_money(s['total_rut'])}\n"
             f"🎯 Mục tiêu: Đạt {s['progress']:.1f}% (Đích đến: {format_money(s['target_asset'])})\n\n"
             f"CHI TIẾT TỪNG NHÓM:\n"
-            f"1. 🟡 CRYPTO: Hiện có {format_money(d['Crypto']['hien_co'])}, Vốn thực {format_money(d['Crypto']['von'])}, Lãi {format_money(d['Crypto']['lai'])} ({d['Crypto']['pct']:.1f}%)\n"
-            f"2. 📈 STOCK: Hiện có {format_money(d['Stock']['hien_co'])}, Vốn thực {format_money(d['Stock']['von'])}, Lãi {format_money(d['Stock']['lai'])} ({d['Stock']['pct']:.1f}%)\n"
+            f"1. 🟡 CRYPTO: Hiện có {format_money(d['Crypto']['hien_co'])}, Vốn {format_money(d['Crypto']['von'])}, Lãi {format_money(d['Crypto']['lai'])} ({d['Crypto']['pct']:.1f}%)\n"
+            f"2. 📈 STOCK: Hiện có {format_money(d['Stock']['hien_co'])}, Vốn {format_money(d['Stock']['von'])}, Lãi {format_money(d['Stock']['lai'])} ({d['Stock']['pct']:.1f}%)\n"
             f"3. 💵 TIỀN MẶT: Hiện có {format_money(d['Cash']['hien_co'])} VNĐ\n"
             f"----------------------------------"
         )
         
         try:
-            # 2. Gửi văn bản chi tiết này vào hàm get_advice đã nâng cấp của ai_assistant.py
             reply = await portfolio_ai.get_advice(text, full_asset_context)
             await loading.delete()
             await update.message.reply_text(reply)
@@ -270,4 +266,3 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__': main()
-
