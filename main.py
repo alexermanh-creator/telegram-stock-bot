@@ -34,14 +34,24 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS assets (category TEXT PRIMARY KEY, current_value REAL)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, type TEXT, amount REAL, date TEXT)''')
+    # Thêm note TEXT vào lệnh tạo bảng transactions
+    c.execute('''CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, type TEXT, amount REAL, date TEXT, note TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value REAL)''')
+    
+    # Lệnh tự động nâng cấp DB cũ
+    try:
+        c.execute("ALTER TABLE transactions ADD COLUMN note TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('target_asset', 500000000)")
     
     c.execute("SELECT COUNT(*) FROM transactions")
     if c.fetchone()[0] == 0 and INITIAL_TRANSACTIONS:
         c.executemany("INSERT INTO assets (category, current_value) VALUES (?, ?)", INITIAL_ASSETS)
-        c.executemany("INSERT INTO transactions (category, type, amount, date) VALUES (?, ?, ?, ?)", INITIAL_TRANSACTIONS)
+        # Thêm cột note rỗng cho dữ liệu ban đầu để tránh lỗi
+        processed_tx = [(*t, "") for t in INITIAL_TRANSACTIONS]
+        c.executemany("INSERT INTO transactions (category, type, amount, date, note) VALUES (?, ?, ?, ?, ?)", processed_tx)
     conn.commit()
     conn.close()
 
@@ -233,11 +243,30 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     elif state in ['awaiting_nap', 'awaiting_rut']:
         amt = parse_amount(text)
-        if amt is not None:
-            cat, t_type = context.user_data.get('category'), ('Nạp' if state == 'awaiting_nap' else 'Rút')
-            conn = sqlite3.connect(DB_FILE); c = conn.cursor(); c.execute("INSERT INTO transactions (category, type, amount, date) VALUES (?, ?, ?, ?)", (cat, t_type, amt, datetime.datetime.now().strftime("%Y-%m-%d"))); tx_id = c.lastrowid; conn.commit(); conn.close(); context.user_data.clear()
-            kb = [[InlineKeyboardButton("↩️ Hoàn tác", callback_data=f"undo_{tx_id}")]]
-            await update.message.reply_text(f"✅ Đã ghi nhận {t_type} vào {cat}.", reply_markup=InlineKeyboardMarkup(kb))
+        if amt:
+            # Lưu số tiền và chuyển sang bước hỏi ghi chú
+            context.user_data['temp_amt'] = amt
+            context.user_data['prev_state'] = state
+            context.user_data['state'] = 'awaiting_note'
+            await update.message.reply_text("📝 Nhập ghi chú cho giao dịch này (hoặc gõ '.' để bỏ qua):")
+        return
+
+    elif state == 'awaiting_note':
+        amt = context.user_data.get('temp_amt')
+        cat = context.user_data.get('category')
+        t_type = 'Nạp' if context.user_data.get('prev_state') == 'awaiting_nap' else 'Rút'
+        note = "" if text == "." else text
+        
+        conn = sqlite3.connect(DB_FILE); c = conn.cursor()
+        c.execute("INSERT INTO transactions (category, type, amount, date, note) VALUES (?, ?, ?, ?, ?)", 
+                  (cat, t_type, amt, datetime.datetime.now().strftime("%Y-%m-%d"), note))
+        tx_id = c.lastrowid; conn.commit(); conn.close()
+        
+        context.user_data.clear()
+        kb = [[InlineKeyboardButton("↩️ Hoàn tác", callback_data=f"undo_{tx_id}")]]
+        await update.message.reply_text(f"✅ Đã lưu {t_type} {format_money(amt)} vào {cat}.\n📝 Ghi chú: {note if note else 'Trống'}", 
+                                       reply_markup=InlineKeyboardMarkup(kb))
+        return
             
     elif state and str(state).startswith('awaiting_edit_'):
         parts = state.split("_"); tx_id, bd, amt = parts[2], parts[3], parse_amount(text)
@@ -269,4 +298,5 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__': main()
+
 
