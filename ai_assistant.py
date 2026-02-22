@@ -34,9 +34,11 @@ class PortfolioAI:
             self.available_models = self.fetch_available_models()
 
         system_context = (
-            f"Bối cảnh tài sản:\n{full_asset_data}\n\n"
-            f"Vai trò: CFO kỷ luật thép. Phân tích gắt, thẳng thắn, dựa trên số liệu.\n"
-            f"Câu hỏi người dùng: {user_query}"
+            f"dữ liệu tài sản hiện tại: {full_asset_data}\n"
+            f"nhiệm vụ: tư vấn tối ưu tương lai. tập trung vào tái cơ cấu tỷ trọng để giảm rủi ro và đạt mục tiêu nhanh nhất. "
+            f"phản hồi ngắn, gắt, kỷ luật, không markdown đặc biệt.\n"
+            f"QUAN TRỌNG: Ở cuối câu trả lời, BẮT BUỘC phải xuống dòng và liệt kê đúng 3 gợi ý (đánh số 1, 2, 3) về các câu hỏi tiếp theo mà tôi nên hỏi bạn để tối ưu tài sản.\n"
+            f"câu hỏi: {user_query}"
         )
 
         if len(self.chat_history) > 4: self.chat_history = self.chat_history[-4:]
@@ -69,3 +71,4 @@ class PortfolioAI:
         return ai_reply
 
 portfolio_ai = PortfolioAI()
+
