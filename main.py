@@ -155,14 +155,31 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif state == 'chatting_ai':
         s = get_stats()
-        loading = await update.message.reply_text("⌛ AI đang phân tích dữ liệu...")
+        d = s['details']
+        loading = await update.message.reply_text("⌛ AI đang phân tích toàn bộ bảng tài sản...")
+        
+        # 1. Bóc tách dữ liệu chi tiết thành văn bản để AI dễ "soi"
+        full_asset_context = (
+            f"--- BÁO CÁO TÀI SẢN CHI TIẾT ---\n"
+            f"🏆 TỔNG TÀI SẢN: {format_money(s['total_val'])} VNĐ\n"
+            f"📈 Lãi/Lỗ tổng: {format_money(s['total_lai'])} ({s['total_lai_pct']:.2f}%)\n"
+            f"📤 Tổng vốn nạp: {format_money(s['total_nap'])} | 📥 Tổng rút: {format_money(s['total_rut'])}\n"
+            f"🎯 Mục tiêu: Đạt {s['progress']:.1f}% (Đích đến: {format_money(s['target_asset'])})\n\n"
+            f"CHI TIẾT TỪNG NHÓM:\n"
+            f"1. 🟡 CRYPTO: Hiện có {format_money(d['Crypto']['hien_co'])}, Vốn thực {format_money(d['Crypto']['von'])}, Lãi {format_money(d['Crypto']['lai'])} ({d['Crypto']['pct']:.1f}%)\n"
+            f"2. 📈 STOCK: Hiện có {format_money(d['Stock']['hien_co'])}, Vốn thực {format_money(d['Stock']['von'])}, Lãi {format_money(d['Stock']['lai'])} ({d['Stock']['pct']:.1f}%)\n"
+            f"3. 💵 TIỀN MẶT: Hiện có {format_money(d['Cash']['hien_co'])} VNĐ\n"
+            f"----------------------------------"
+        )
+        
         try:
-            reply = await portfolio_ai.get_advice(text, s)
+            # 2. Gửi văn bản chi tiết này vào hàm get_advice đã nâng cấp của ai_assistant.py
+            reply = await portfolio_ai.get_advice(text, full_asset_context)
             await loading.delete()
             await update.message.reply_text(reply)
         except Exception as e:
             await loading.delete()
-            await update.message.reply_text(f"❌ Có lỗi khi gửi tin nhắn Telegram: {e}")
+            await update.message.reply_text(f"❌ Có lỗi khi gọi AI: {e}")
         return
 
     elif text == '💰 Xem Tổng Tài sản':
@@ -253,3 +270,4 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__': main()
+
