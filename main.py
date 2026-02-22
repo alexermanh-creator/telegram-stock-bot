@@ -154,29 +154,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif state == 'chatting_ai':
-        loading = await update.message.reply_text("⌛ AI đang truy xuất bảng tài sản để phân tích...")
-        
-        # 1. Thu thập dữ liệu từ hàm thống kê get_stats() của bạn
         s = get_stats()
-        d = s['details']
-        
-        # 2. Xây dựng ngữ cảnh chi tiết (Đây là phần AI mong chờ nhất)
-        full_context = (
-            f"🏆 TỔNG TÀI SẢN: {format_money(s['total_val'])}đ\n"
-            f"📈 Lãi/Lỗ: {format_money(s['total_lai'])} ({s['total_lai_pct']:.2f}%)\n"
-            f"📤 Vốn nạp: {format_money(s['total_nap'])} | 📥 Rút: {format_money(s['total_rut'])}đ\n"
-            f"🎯 Mục tiêu: Đạt {s['progress']:.1f}% ({format_money(s['target_asset'])}đ)\n\n"
-            f"CHI TIẾT DANH MỤC:\n"
-            f"- CRYPTO: {format_money(d['Crypto']['hien_co'])}đ (Vốn {format_money(d['Crypto']['von'])}đ, Lãi {d['Crypto']['pct']:.1f}%)\n"
-            f"- STOCK: {format_money(d['Stock']['hien_co'])}đ (Vốn {format_money(d['Stock']['von'])}đ, Lãi {d['Stock']['pct']:.1f}%)\n"
-            f"- TIỀN MẶT: {format_money(d['Cash']['hien_co'])}đ"
-        )
-        
-        # 3. Gửi sang AI (Hàm get_advice mới cần full_context)
-        reply = await portfolio_ai.get_advice(text, full_context)
-        
-        await loading.delete()
-        await update.message.reply_text(reply, parse_mode='Markdown')
+        loading = await update.message.reply_text("⌛ AI đang phân tích dữ liệu...")
+        try:
+            reply = await portfolio_ai.get_advice(text, s)
+            await loading.delete()
+            await update.message.reply_text(reply)
+        except Exception as e:
+            await loading.delete()
+            await update.message.reply_text(f"❌ Có lỗi khi gửi tin nhắn Telegram: {e}")
         return
 
     elif text == '💰 Xem Tổng Tài sản':
@@ -267,4 +253,3 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__': main()
-
