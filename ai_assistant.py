@@ -33,13 +33,18 @@ class PortfolioAI:
         if not self.available_models:
             self.available_models = self.fetch_available_models()
 
+        # NÂNG CẤP: Chỉ thị cụ thể để AI soi kỹ dữ liệu tài sản
         system_context = (
-            f"Bối cảnh tài sản:\n{full_asset_data}\n\n"
-            f"Vai trò: CFO kỷ luật thép. Phân tích gắt, thẳng thắn, dựa trên số liệu.\n"
-            f"Câu hỏi người dùng: {user_query}"
+            f"BỐI CẢNH TÀI SẢN CHI TIẾT:\n{full_asset_data}\n\n"
+            f"VAI TRÒ: Bạn là CFO kỷ luật thép. Hãy soi kỹ bảng tài sản trên.\n"
+            f"NHIỆM VỤ: Phân tích tỷ trọng, lãi lỗ từng nhóm. Cảnh báo nếu nạp nhiều mà lỗ sâu hoặc tiền mặt quá ít.\n"
+            f"PHONG CÁCH: Trả lời ngắn, gắt, dựa trực tiếp trên con số. Không nói lý thuyết suông.\n"
+            f"CÂU HỎI: {user_query}"
         )
 
+        # Trí nhớ hội thoại rút gọn (giữ 4 tin nhắn gần nhất)
         if len(self.chat_history) > 4: self.chat_history = self.chat_history[-4:]
+        
         api_contents = self.chat_history.copy()
         api_contents.append({"role": "user", "parts": [{"text": system_context}]})
 
@@ -55,7 +60,7 @@ class PortfolioAI:
                         if 'candidates' in data and data['candidates'][0]['content']['parts'][0]['text']:
                             return data['candidates'][0]['content']['parts'][0]['text']
                     
-                    # Nếu gặp lỗi 429 (hết lượt) hoặc các lỗi khác, chuyển sang model tiếp theo
+                    # Nếu gặp lỗi 429 hoặc các lỗi khác, chuyển sang model tiếp theo
                     continue 
                 except:
                     continue
